@@ -1,33 +1,34 @@
-# Leitura-Sem-Limites
+# Leitura Sem Limites
 
-# Sistema de Gerenciamento Escolar
+## Sistema de Gerenciamento Escolar
 
-## Descrição
-Este projeto é um Sistema de Gerenciamento Escolar desenvolvido com React no frontend e Node.js com Express no backend. O sistema permite o gerenciamento de professores, alunos, turmas, disciplinas e salas de aula.
+### Descrição
+O Leitura Sem Limites é um Sistema de Gerenciamento Escolar desenvolvido com React no frontend e Node.js com Express no backend. O sistema permite o gerenciamento eficiente de professores, alunos, turmas, disciplinas e salas de aula.
 
-## Funcionalidades
+### Funcionalidades Principais
 - Cadastro e autenticação de professores e alunos
-- Gerenciamento de turmas
+- Gerenciamento completo de turmas
 - Cadastro e edição de salas de aula
 - Cadastro e gerenciamento de disciplinas
 - Edição de perfil de usuário
-- Visualização de turmas e alunos matriculados
+- Visualização detalhada de turmas e alunos matriculados
 
-## Tecnologias Utilizadas
-- Frontend: React, Material-UI
-- Backend: Node.js, Express
-- Banco de Dados: MySQL
-- Outras bibliotecas: Axios, react-router-dom
+### Tecnologias Utilizadas
+- **Frontend:** React, Material-UI
+- **Backend:** Node.js, Express
+- **Banco de Dados:** MySQL
+- **Bibliotecas Adicionais:** Axios, react-router-dom
 
-## Pré-requisitos
-- Node.js
-- MySQL
+### Pré-requisitos
+- Node.js (versão recomendada: 14.x ou superior)
+- MySQL (versão recomendada: 8.x)
 
-## Instalação
+### Instalação e Configuração
 
 1. Clone o repositório:
    ```
-   git clone https://git@github.com:Jean13331/Leitura-Sem-Limites.git
+   git clone https://github.com/Jean13331/Leitura-Sem-Limites.git
+   cd Leitura-Sem-Limites
    ```
 
 2. Instale as dependências do frontend:
@@ -38,37 +39,45 @@ Este projeto é um Sistema de Gerenciamento Escolar desenvolvido com React no fr
 
 3. Instale as dependências do backend:
    ```
-   cd backend
+   cd ../../backend
    npm install
    ```
 
 4. Configure o banco de dados MySQL:
-   - Crie um banco de dados
+   - Crie um novo banco de dados
    - Atualize as credenciais de conexão no arquivo `backend/db.js`
 
 5. Inicie o servidor backend:
    ```
-   cd backend
    node index.js
    ```
 
-6. Inicie o aplicativo React:
+6. Em um novo terminal, inicie o aplicativo React:
    ```
-   cd trabalho/src
+   cd ../trabalho/src
    npm start
    ```
 
-## Uso
-Após iniciar o servidor e o aplicativo React, acesse `http://localhost:3000` no seu navegador. Você poderá se registrar como professor ou aluno e utilizar as funcionalidades do sistema.
+### Como Usar
+Após iniciar o servidor e o aplicativo React, acesse `http://localhost:3000` no seu navegador. Você poderá se registrar como professor ou aluno e começar a utilizar as funcionalidades do sistema.
 
-## Estrutura do Projeto
-- `trabalho/src/`: Contém os componentes React e arquivos do frontend
-- `backend/`: Contém os arquivos do servidor Node.js e Express
-- `backend/index.js`: Arquivo principal do servidor com as rotas da API
-- `backend/db.js`: Configuração da conexão com o banco de dados MySQL
+### Estrutura do Projeto
+- `trabalho/src/`: Componentes React e arquivos do frontend
+- `backend/`: Arquivos do servidor Node.js e Express
+  - `index.js`: Arquivo principal do servidor com as rotas da API
+  - `db.js`: Configuração da conexão com o banco de dados MySQL
 
+### Contribuição
+Contribuições são bem-vindas! Por favor, leia o arquivo CONTRIBUTING.md para detalhes sobre nosso código de conduta e o processo para enviar pull requests.
 
+### Licença
+Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE.md para detalhes.
 
+### Contato
+Jean - [jean@example.com](mailto:jean@example.com)
 
+Link do Projeto: [https://github.com/Jean13331/Leitura-Sem-Limites](https://github.com/Jean13331/Leitura-Sem-Limites)
 
-Link do Projeto: [https://github.com/Jean13331/Leitura-Sem-Limites]
+---
+
+**Nota:** Os comandos SQL para criar o banco de dados foram omitidos nesta versão do README para manter o foco nas informações essenciais do projeto. Considere mover esses comandos para um arquivo separado, como `database_setup.sql`, e mencioná-lo na seção de instalação.
