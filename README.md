@@ -68,12 +68,6 @@ Após iniciar o servidor e o aplicativo React, acesse `http://localhost:3000` no
   - `index.js`: Arquivo principal do servidor com as rotas da API
   - `db.js`: Configuração da conexão com o banco de dados MySQL
 
-### Contribuição
-Contribuições são bem-vindas! Por favor, leia o arquivo CONTRIBUTING.md para detalhes sobre nosso código de conduta e o processo para enviar pull requests.
-
-### Licença
-Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE.md para detalhes.
-
 ### Contato
 Jean - [jeanortegajunior@gmail.com]
 
