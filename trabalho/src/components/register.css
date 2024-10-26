@@ -1,0 +1,101 @@
+/* Container principal do formulário de registro */
+.register-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centraliza o conteúdo horizontalmente */
+    justify-content: center; /* Centraliza o conteúdo verticalmente */
+    width: 100%;
+    max-width: 600px; /* Largura máxima do formulário */
+    margin: 0 auto; /* Centraliza o formulário na tela */
+    padding: 20px; /* Espaçamento interno do contêiner */
+    border-radius: 8px; /* Bordas arredondadas */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* Sombra leve para destacar o formulário */
+    background-color: #fff; /* Cor de fundo do formulário */
+}
+
+/* Título do formulário */
+.register-container h2 {
+    margin-bottom: 20px; /* Espaçamento abaixo do título */
+    font-size: 24px; /* Tamanho da fonte do título */
+    color: #333; /* Cor do texto do título */
+}
+
+/* Estilo para os grupos de formulário */
+.form-group {
+    width: 100%; /* Largura total para os grupos de formulário */
+    margin-bottom: 15px; /* Espaçamento abaixo de cada grupo */
+}
+
+/* Botões */
+.button-container {
+    display: flex;
+    justify-content: space-between; /* Espaçamento entre os botões */
+    width: 100%; /* Largura total para os botões */
+    margin-top: 20px; /* Espaço acima dos botões */
+}
+
+.register-btn {
+    background-color: #1976d2; /* Cor do botão de registro */
+    color: white; /* Cor do texto do botão */
+    width: 120px; /* Largura fixa para o botão de registro */
+    height: 40px; /* Altura definida para o botão */
+    transition: background-color 0.3s; /* Transição suave para a cor do botão */
+}
+
+.register-btn:hover {
+    background-color: #155a8a; /* Cor ao passar o mouse */
+}
+
+/* Estilo para o botão "Voltar ao Login" */
+.button-container button {
+    background-color: transparent; /* Fundo transparente */
+    color: #1976d2; /* Cor do texto do botão */
+    border: 1px solid #1976d2; /* Borda do botão */
+    width: 120px; /* Largura fixa para o botão */
+    height: 40px; /* Altura definida para o botão */
+    transition: background-color 0.3s, color 0.3s; /* Transição suave para cores */
+}
+
+.button-container button:hover {
+    background-color: #1976d2; /* Cor de fundo ao passar o mouse */
+    color: white; /* Cor do texto ao passar o mouse */
+}
+
+/* Estilo para o Snackbar */
+.snackbar {
+    background-color: #d32f2f; /* Cor do Snackbar para erros */
+    color: white; /* Cor do texto do Snackbar */
+    padding: 16px; /* Espaçamento interno do Snackbar */
+    border-radius: 4px; /* Bordas arredondadas do Snackbar */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); /* Sombra leve para o Snackbar */
+}
+
+/* Estilo para os campos de entrada */
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select {
+    border-radius: 4px; /* Bordas arredondadas para os campos de entrada */
+    padding: 10px; /* Espaçamento interno dos campos */
+    border: 1px solid #ccc; /* Borda padrão para os campos */
+    transition: border-color 0.3s; /* Transição suave para a cor da borda */
+}
+
+input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="date"]:focus, select:focus {
+    border-color: #1976d2; /* Cor da borda ao focar no campo */
+    outline: none; /* Remove o contorno padrão ao focar */
+}
+
+/* Estilo do botão de ícone para mostrar/ocultar a senha */
+.MuiIconButton-root {
+    padding: 0; /* Remove padding padrão */
+}
+
+/* Media queries para responsividade */
+@media (max-width: 600px) {
+    .register-container {
+        padding: 15px; /* Reduz padding em telas menores */
+    }
+
+    .button-container {
+        flex-direction: column; /* Alinha os botões verticalmente em telas menores */
+        gap: 10px; /* Espaço entre os botões */
+    }
+}
