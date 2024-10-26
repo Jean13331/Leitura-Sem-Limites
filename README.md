@@ -74,7 +74,7 @@ Contribuições são bem-vindas! Por favor, leia o arquivo CONTRIBUTING.md para 
 Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE.md para detalhes.
 
 ### Contato
-Jean - [jean@example.com](mailto:jean@example.com)
+Jean - [jeanortegajunior@gmail.com]
 
 Link do Projeto: [https://github.com/Jean13331/Leitura-Sem-Limites](https://github.com/Jean13331/Leitura-Sem-Limites)
 
