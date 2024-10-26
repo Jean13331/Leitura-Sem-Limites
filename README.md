@@ -45,6 +45,7 @@ O Leitura Sem Limites é um Sistema de Gerenciamento Escolar desenvolvido com Re
 
 4. Configure o banco de dados MySQL:
    - Crie um novo banco de dados
+   - Execute o script SQL fornecido no arquivo `database_setup.sql` para criar as tabelas necessárias
    - Atualize as credenciais de conexão no arquivo `backend/db.js`
 
 5. Inicie o servidor backend:
