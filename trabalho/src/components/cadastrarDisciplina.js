@@ -25,11 +25,18 @@ import {
     DialogContent,
     DialogTitle,
     Snackbar,
-    Alert
+    Alert,
+    InputAdornment,
+    FormControl,
+    Select,
+    MenuItem,
+    FormControlLabel,
+    Switch
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SearchIcon from '@mui/icons-material/Search';
 
 const CadastrarDisciplina = () => {
     const [openDrawer, setOpenDrawer] = useState(false);
@@ -40,6 +47,10 @@ const CadastrarDisciplina = () => {
     const [openSnackbar, setOpenSnackbar] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
     const [snackbarSeverity, setSnackbarSeverity] = useState('success');
+    const [filtros, setFiltros] = useState({
+        nome: '',
+        status: 'todos' // 'todos', 'ativos', 'inativos'
+    });
     const navigate = useNavigate();
     const professorEmail = localStorage.getItem('professorEmail');
 
@@ -142,6 +153,46 @@ const CadastrarDisciplina = () => {
         setOpenDrawer(!openDrawer);
     };
 
+    // Função para filtrar disciplinas
+    const disciplinasFiltradas = disciplinas.filter(disciplina => {
+        const matchNome = disciplina.Nome?.toLowerCase().includes(filtros.nome.toLowerCase());
+        const matchStatus = filtros.status === 'todos' ? true :
+            (filtros.status === 'ativos' ? disciplina.ativo : !disciplina.ativo);
+        
+        return matchNome && matchStatus;
+    });
+
+    // Função para atualizar os filtros
+    const handleFiltroChange = (e) => {
+        const { name, value } = e.target;
+        setFiltros(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
+    // Função para alternar status ativo/inativo
+    const handleToggleAtivo = async (disciplina) => {
+        try {
+            const response = await axios.put(
+                `http://localhost:3001/inativar-disciplina/${disciplina.idDisciplina}`,
+                { ativo: !disciplina.ativo }
+            );
+
+            if (response.data.success) {
+                setSnackbarMessage(response.data.message);
+                setSnackbarSeverity('success');
+                setOpenSnackbar(true);
+                fetchDisciplinas();
+            }
+        } catch (error) {
+            console.error('Erro ao alterar status da disciplina:', error);
+            setSnackbarMessage('Erro ao alterar status da disciplina');
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+        }
+    };
+
     return (
         <div>
             <AppBar position="static">
@@ -182,6 +233,42 @@ const CadastrarDisciplina = () => {
 
             <Container>
                 <Paper style={{ padding: '20px', marginTop: '20px' }}>
+                    {/* Adicionar seção de filtros */}
+                    <div style={{ 
+                        display: 'flex', 
+                        gap: '16px', 
+                        marginBottom: '20px',
+                        backgroundColor: '#f5f5f5',
+                        padding: '16px',
+                        borderRadius: '8px'
+                    }}>
+                        <TextField
+                            name="nome"
+                            value={filtros.nome}
+                            onChange={handleFiltroChange}
+                            placeholder="Filtrar por nome"
+                            size="small"
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+                        <FormControl size="small" style={{ minWidth: 120 }}>
+                            <Select
+                                name="status"
+                                value={filtros.status}
+                                onChange={handleFiltroChange}
+                            >
+                                <MenuItem value="todos">Todos</MenuItem>
+                                <MenuItem value="ativos">Ativos</MenuItem>
+                                <MenuItem value="inativos">Inativos</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </div>
+
                     <Button variant="contained" color="primary" onClick={() => setOpenDialog(true)}>
                         Adicionar Nova Disciplina
                     </Button>
@@ -192,24 +279,50 @@ const CadastrarDisciplina = () => {
                                 <TableRow>
                                     <TableCell>Nome</TableCell>
                                     <TableCell>Turmas</TableCell>
+                                    <TableCell>Status</TableCell>
                                     <TableCell>Ações</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {disciplinas.map((disciplina) => (
-                                    <TableRow key={disciplina.idDisciplina}>
-                                        <TableCell>{disciplina.Nome}</TableCell>
-                                        <TableCell>{disciplina.Turmas || 'Nenhuma turma'}</TableCell>
-                                        <TableCell>
-                                            <IconButton onClick={() => handleEdit(disciplina)}>
-                                                <EditIcon />
-                                            </IconButton>
-                                            <IconButton onClick={() => handleDelete(disciplina.idDisciplina)}>
-                                                <DeleteIcon />
-                                            </IconButton>
+                                {disciplinasFiltradas.length > 0 ? (
+                                    disciplinasFiltradas.map((disciplina) => (
+                                        <TableRow 
+                                            key={disciplina.idDisciplina}
+                                            sx={{
+                                                backgroundColor: !disciplina.ativo ? 'rgba(0, 0, 0, 0.1)' : 'inherit',
+                                                opacity: !disciplina.ativo ? 0.7 : 1
+                                            }}
+                                        >
+                                            <TableCell>{disciplina.Nome}</TableCell>
+                                            <TableCell>{disciplina.numTurmas || 0} turma(s)</TableCell>
+                                            <TableCell>
+                                                <FormControlLabel
+                                                    control={
+                                                        <Switch
+                                                            checked={disciplina.ativo}
+                                                            onChange={() => handleToggleAtivo(disciplina)}
+                                                            color="primary"
+                                                        />
+                                                    }
+                                                    label={disciplina.ativo ? "Ativa" : "Inativa"}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <IconButton onClick={() => handleEdit(disciplina)}>
+                                                    <EditIcon />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={4} align="center">
+                                            <Typography variant="subtitle1" style={{ padding: '20px' }}>
+                                                Nenhuma disciplina encontrada com os filtros aplicados.
+                                            </Typography>
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                )}
                             </TableBody>
                         </Table>
                     </TableContainer>

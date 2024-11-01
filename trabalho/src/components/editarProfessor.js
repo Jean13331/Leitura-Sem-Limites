@@ -11,8 +11,10 @@ const EditarProfessor = () => {
     const [openSnackbar, setOpenSnackbar] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
     const [snackbarSeverity, setSnackbarSeverity] = useState('success');
+    const [statusMessage, setStatusMessage] = useState('');
     const navigate = useNavigate();
     const professorEmail = localStorage.getItem('professorEmail');
+    const [openStatusDialog, setOpenStatusDialog] = useState(false);
 
     const toggleDrawer = () => {
         setOpenDrawer(!openDrawer);
@@ -33,19 +35,52 @@ const EditarProfessor = () => {
 
     useEffect(() => {
         const fetchProfessor = async () => {
+            if (!professorEmail) {
+                console.log('Email do professor não encontrado no localStorage'); // Debug
+                navigate('/login');
+                return;
+            }
+
             try {
-                const response = await axios.get(`http://localhost:3001/professor?email=${professorEmail}`);
-                setProfessor(response.data);
+                console.log('Buscando professor com email:', professorEmail); // Debug
+                
+                const response = await axios.get(`http://localhost:3001/professor`, {
+                    params: { email: professorEmail }
+                });
+
+                console.log('Resposta do servidor:', response.data); // Debug
+
+                if (response.data.success && response.data.data) {
+                    setProfessor({
+                        idProfessor: response.data.data.idProfessor,
+                        Nome: response.data.data.Nome,
+                        Email: response.data.data.Email,
+                        Telefone: response.data.data.Telefone,
+                        ativo: response.data.data.ativo
+                    });
+                } else {
+                    setSnackbarMessage('Não foi possível carregar as informações do professor.');
+                    setSnackbarSeverity('error');
+                    setOpenSnackbar(true);
+                }
             } catch (error) {
                 console.error('Erro ao buscar informações do professor:', error);
-                setSnackbarMessage('Erro ao carregar informações do professor.');
+                setSnackbarMessage(
+                    error.response?.data?.message || 
+                    'Erro ao carregar informações do professor.'
+                );
                 setSnackbarSeverity('error');
                 setOpenSnackbar(true);
+
+                if (error.response?.status === 404) {
+                    console.log('Professor não encontrado, redirecionando para login'); // Debug
+                    navigate('/login');
+                }
             }
         };
 
         fetchProfessor();
-    }, [professorEmail]);
+    }, [professorEmail, navigate]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -86,6 +121,57 @@ const EditarProfessor = () => {
             setOpenSnackbar(true);
         }
         setOpenDialog(false);
+    };
+
+    const handleToggleStatus = async () => {
+        if (!professor.idProfessor) {
+            console.error('ID do professor não encontrado:', professor); // Debug
+            setSnackbarMessage('ID do professor não encontrado');
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+            return;
+        }
+
+        try {
+            console.log('Enviando requisição com:', { 
+                id: professor.idProfessor, 
+                ativo: !professor.ativo 
+            }); // Debug
+            
+            const response = await axios.put(
+                `http://localhost:3001/inativar-professor/${professor.idProfessor}`,
+                { ativo: !professor.ativo }
+            );
+
+            if (response.data.success) {
+                setProfessor(prev => ({
+                    ...prev,
+                    ativo: response.data.ativo
+                }));
+                setSnackbarMessage(response.data.message);
+                setSnackbarSeverity('success');
+                setOpenSnackbar(true);
+                setOpenStatusDialog(false);
+            }
+        } catch (error) {
+            console.error('Erro ao alterar status do professor:', error);
+            setSnackbarMessage(
+                error.response?.data?.message || 
+                'Erro ao alterar status do professor'
+            );
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+            setOpenStatusDialog(false);
+        }
+    };
+
+    const handleConfirmStatusChange = () => {
+        setOpenStatusDialog(true);
+    };
+
+    // Adicionar verificação de status antes de permitir certas ações
+    const isActionAllowed = () => {
+        return professor.ativo;
     };
 
     return (
@@ -152,6 +238,31 @@ const EditarProfessor = () => {
                         <Typography variant="body1">
                             Telefone: {professor.Telefone}
                         </Typography>
+                        <Typography 
+                            variant="body1" 
+                            color={professor.ativo ? "success.main" : "error.main"}
+                            style={{ marginTop: '10px' }}
+                        >
+                            Status: {professor.ativo ? 'Ativo' : 'Inativo'}
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            color={professor.ativo ? "error" : "success"}
+                            onClick={handleConfirmStatusChange}
+                            style={{ marginTop: '10px' }}
+                        >
+                            {professor.ativo ? 'Inativar Conta' : 'Ativar Conta'}
+                        </Button>
+                        {!professor.ativo && (
+                            <Typography 
+                                variant="body2" 
+                                color="error" 
+                                style={{ marginTop: '10px' }}
+                            >
+                                Atenção: Com a conta inativa, você não poderá criar novas turmas 
+                                ou fazer alterações no sistema.
+                            </Typography>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -184,7 +295,12 @@ const EditarProfessor = () => {
                         margin="normal"
                     />
                     <Box sx={{ mt: 2 }}>
-                        <Button type="submit" variant="contained" color="primary">
+                        <Button 
+                            type="submit" 
+                            variant="contained" 
+                            color="primary"
+                            disabled={!isActionAllowed()}
+                        >
                             Salvar Alterações
                         </Button>
                         <Button 
@@ -217,6 +333,38 @@ const EditarProfessor = () => {
                     <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
                     <Button onClick={handleDelete} color="error" autoFocus>
                         Confirmar Exclusão
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog
+                open={openStatusDialog}
+                onClose={() => setOpenStatusDialog(false)}
+            >
+                <DialogTitle>
+                    {professor.ativo ? 'Inativar Conta' : 'Ativar Conta'}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        {professor.ativo 
+                            ? 'Tem certeza que deseja inativar sua conta? Você não poderá criar ou gerenciar turmas enquanto estiver inativo.'
+                            : 'Deseja reativar sua conta?'
+                        }
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenStatusDialog(false)}>
+                        Cancelar
+                    </Button>
+                    <Button 
+                        onClick={() => {
+                            handleToggleStatus();
+                            setOpenStatusDialog(false);
+                        }}
+                        color={professor.ativo ? "error" : "success"}
+                        autoFocus
+                    >
+                        Confirmar
                     </Button>
                 </DialogActions>
             </Dialog>

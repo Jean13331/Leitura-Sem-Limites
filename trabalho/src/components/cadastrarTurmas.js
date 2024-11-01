@@ -32,11 +32,13 @@ import {
     DialogContent,
     DialogTitle,
     DialogContentText,
-    Switch
+    Switch,
+    InputAdornment
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete'; // Adicione esta importação
+import SearchIcon from '@mui/icons-material/Search';
 
 const Header = ({ professorEmail, toggleDrawer }) => {
     return (
@@ -100,7 +102,11 @@ const CadastrarTurma = () => {
         Sala_idSala: '',
         turma_aluno_id: []
     });
-    const [professorLogado, setProfessorLogado] = useState(null);
+    const [professorLogado, setProfessorLogado] = useState({
+        idProfessor: '',
+        Nome: '',
+        Email: ''
+    });
     const [disciplinasProfessor, setDisciplinasProfessor] = useState([]);
     const [salas, setSalas] = useState([]);
     const [alunos, setAlunos] = useState([]);
@@ -116,13 +122,42 @@ const CadastrarTurma = () => {
     const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
     const [alunosAtivos, setAlunosAtivos] = useState({});
     const [professores, setProfessores] = useState([]);
+    const [filtros, setFiltros] = useState({
+        nomeTurma: '',
+        professor: '',
+        disciplina: '',
+        status: 'todos'
+    });
+    const [buscarAluno, setBuscarAluno] = useState('');
 
     const navigate = useNavigate();
     const professorEmail = localStorage.getItem('professorEmail');
 
     useEffect(() => {
+        const buscarProfessorLogado = async () => {
+            try {
+                const response = await axios.get(`http://localhost:3001/professores?email=${professorEmail}`);
+                if (response.data && response.data.length > 0) {
+                    const professor = response.data[0];
+                    setProfessorLogado(professor);
+                    setFormData(prev => ({
+                        ...prev,
+                        Professor_idProfessor: professor.idProfessor,
+                        nomeProfessor: professor.Nome
+                    }));
+                }
+            } catch (error) {
+                console.error('Erro ao buscar professor:', error);
+            }
+        };
+
+        if (professorEmail) {
+            buscarProfessorLogado();
+        }
+    }, [professorEmail]);
+
+    useEffect(() => {
         fetchData();
-        fetchTurmas();
     }, [professorEmail]);
 
     useEffect(() => {
@@ -148,42 +183,37 @@ const CadastrarTurma = () => {
 
     const fetchData = async () => {
         try {
-            const [professorLogadoRes, disciplinasRes, salasRes, alunosRes, professoresRes] = await Promise.all([
-                axios.get(`http://localhost:3001/professores?email=${professorEmail}`),
+            const professorRes = await axios.get(`http://localhost:3001/professor?email=${professorEmail}`);
+            
+            if (!professorRes.data?.success || !professorRes.data?.data) {
+                throw new Error('Professor não encontrado');
+            }
+
+            const professor = professorRes.data.data;
+            console.log('Professor logado:', professor);
+
+            setProfessorLogado(professor);
+            
+            setFormData(prev => ({
+                ...prev,
+                Professor_idProfessor: professor.idProfessor
+            }));
+
+            const [disciplinasRes, salasRes, alunosRes, turmasRes] = await Promise.all([
                 axios.get(`http://localhost:3001/disciplinas-professor?email=${professorEmail}`),
                 axios.get('http://localhost:3001/salas'),
                 axios.get('http://localhost:3001/alunos'),
-                axios.get('http://localhost:3001/professores')
+                axios.get('http://localhost:3001/turmas')
             ]);
-            
-            if (professorLogadoRes.data && professorLogadoRes.data.length > 0) {
-                const professor = professorLogadoRes.data[0];
-                setProfessorLogado(professor);
-                setFormData(prevState => ({
-                    ...prevState,
-                    Professor_idProfessor: professor.idProfessor
-                }));
-            } else {
-                setMensagem('Professor não encontrado. Por favor, fa��a login novamente.');
-            }
 
             setDisciplinasProfessor(disciplinasRes.data);
             setSalas(salasRes.data);
             setAlunos(alunosRes.data);
-            setProfessores(professoresRes.data);
+            setTurmas(turmasRes.data);
+            
         } catch (error) {
             console.error('Erro ao buscar dados:', error);
-            setMensagem('Erro ao carregar dados. Por favor, tente novamente.');
-        }
-    };
-
-    const fetchTurmas = async () => {
-        try {
-            const response = await axios.get('http://localhost:3001/turmas');
-            setTurmas(response.data);
-        } catch (error) {
-            console.error('Erro ao buscar turmas:', error);
-            setSnackbarMessage('Erro ao carregar turmas. Por favor, tente novamente.');
+            setSnackbarMessage('Erro ao carregar dados');
             setSnackbarSeverity('error');
             setOpenSnackbar(true);
         }
@@ -247,36 +277,35 @@ const CadastrarTurma = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        if (!professorLogado?.idProfessor) {
+            setSnackbarMessage('Erro: Professor não identificado');
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+            return;
+        }
+
         try {
-            let dataToSend = {
+            const dataToSend = {
                 ...formData,
-                turma_aluno_id: Object.keys(alunosAtivos).filter(id => alunosAtivos[id])
+                Professor_idProfessor: professorLogado.idProfessor
             };
 
-            // Remover campos vazios ou undefined
-            Object.keys(dataToSend).forEach(key => 
-                (dataToSend[key] === '' || dataToSend[key] === undefined) && delete dataToSend[key]
-            );
+            console.log('Professor logado:', professorLogado);
+            console.log('Dados sendo enviados:', dataToSend);
 
-            let response;
-            if (editingTurma) {
-                response = await axios.put(`http://localhost:3001/editar-turma/${editingTurma.idTurma}`, dataToSend);
-            } else {
-                response = await axios.post('http://localhost:3001/cadastrar-turma', dataToSend);
-            }
+            const response = await axios.post('http://localhost:3001/cadastrar-turma', dataToSend);
 
             if (response.data.success) {
-                setSnackbarMessage(editingTurma ? 'Turma atualizada com sucesso!' : 'Turma cadastrada com sucesso!');
+                setSnackbarMessage('Turma cadastrada com sucesso!');
                 setSnackbarSeverity('success');
                 setOpenSnackbar(true);
                 resetForm();
-                fetchTurmas();
-            } else {
-                throw new Error(response.data.message || 'Erro ao processar a solicitação');
+                fetchData();
             }
         } catch (error) {
-            console.error('Erro ao cadastrar/atualizar turma:', error);
-            setSnackbarMessage(error.message || 'Erro ao cadastrar/atualizar turma. Por favor, tente novamente.');
+            console.error('Erro ao cadastrar turma:', error);
+            setSnackbarMessage(error.response?.data?.message || 'Erro ao cadastrar turma');
             setSnackbarSeverity('error');
             setOpenSnackbar(true);
         }
@@ -310,7 +339,7 @@ const CadastrarTurma = () => {
                 setSnackbarMessage('Turma excluída com sucesso!');
                 setSnackbarSeverity('success');
                 setOpenSnackbar(true);
-                fetchTurmas();
+                fetchData();
             }
         } catch (error) {
             console.error('Erro ao excluir turma:', error);
@@ -322,11 +351,18 @@ const CadastrarTurma = () => {
     };
 
     const resetForm = () => {
+        if (!professorLogado?.idProfessor) {
+            console.error('Professor não identificado ao resetar formulário');
+            return;
+        }
+
         setFormData({
             Nome: '',
             Ano: '',
             Semestre: '',
-            Professor_idProfessor: professorLogado ? professorLogado.idProfessor : '',
+            Professor_idProfessor: professorLogado.idProfessor,
+            nomeProfessor: professorLogado.Nome,
+            emailProfessor: professorLogado.Email,
             Disciplina_idDisciplina: '',
             Sala_idSala: '',
             turma_aluno_id: []
@@ -339,6 +375,48 @@ const CadastrarTurma = () => {
     const handleLogout = () => {
         localStorage.removeItem('professorEmail');
         navigate('/login');
+    };
+
+    const handleToggleAtivo = async (turma) => {
+        try {
+            const response = await axios.put(`http://localhost:3001/inativar-turma/${turma.idTurma}`, {
+                ativo: !turma.ativo
+            });
+
+            if (response.data.success) {
+                setSnackbarMessage(response.data.message);
+                setSnackbarSeverity('success');
+                setOpenSnackbar(true);
+                fetchData();
+            }
+        } catch (error) {
+            console.error('Erro ao alterar status da turma:', error);
+            setSnackbarMessage('Erro ao alterar status da turma');
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+        }
+    };
+
+    const turmasFiltradas = turmas.filter(turma => {
+        const matchNomeTurma = turma.nomeTurma?.toLowerCase().includes(filtros.nomeTurma.toLowerCase());
+        const matchProfessor = turma.nomeProfessor?.toLowerCase().includes(filtros.professor.toLowerCase());
+        const matchDisciplina = turma.nomeDisciplina?.toLowerCase().includes(filtros.disciplina.toLowerCase());
+        const matchStatus = filtros.status === 'todos' ? true :
+            (filtros.status === 'ativos' ? turma.ativo : !turma.ativo);
+        
+        return matchNomeTurma && matchProfessor && matchDisciplina && matchStatus;
+    });
+
+    const alunosFiltrados = alunos.filter(aluno => 
+        aluno.Nome.toLowerCase().includes(buscarAluno.toLowerCase())
+    );
+
+    const handleFiltroChange = (e) => {
+        const { name, value } = e.target;
+        setFiltros(prev => ({
+            ...prev,
+            [name]: value
+        }));
     };
 
     return (
@@ -356,7 +434,70 @@ const CadastrarTurma = () => {
             <div style={{ padding: '20px' }}>
                 <h1>Gerenciamento de Turmas</h1>
                 
-                {/* Seção 1: Turmas Cadastradas */}
+                <div style={{ 
+                    display: 'flex', 
+                    gap: '16px', 
+                    marginBottom: '20px',
+                    backgroundColor: '#f5f5f5',
+                    padding: '16px',
+                    borderRadius: '8px'
+                }}>
+                    <TextField
+                        name="nomeTurma"
+                        value={filtros.nomeTurma}
+                        onChange={handleFiltroChange}
+                        placeholder="Filtrar por nome da turma"
+                        size="small"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <TextField
+                        name="professor"
+                        value={filtros.professor}
+                        onChange={handleFiltroChange}
+                        placeholder="Filtrar por professor"
+                        size="small"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <TextField
+                        name="disciplina"
+                        value={filtros.disciplina}
+                        onChange={handleFiltroChange}
+                        placeholder="Filtrar por disciplina"
+                        size="small"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <FormControl size="small" style={{ minWidth: 120 }}>
+                        <Select
+                            name="status"
+                            value={filtros.status}
+                            onChange={handleFiltroChange}
+                            displayEmpty
+                        >
+                            <MenuItem value="todos">Todos</MenuItem>
+                            <MenuItem value="ativos">Ativos</MenuItem>
+                            <MenuItem value="inativos">Inativos</MenuItem>
+                        </Select>
+                    </FormControl>
+                </div>
+
                 <h2>Turmas Cadastradas</h2>
                 <TableContainer component={Paper}>
                     <Table>
@@ -367,43 +508,82 @@ const CadastrarTurma = () => {
                                 <TableCell><strong>Disciplina</strong></TableCell>
                                 <TableCell><strong>Sala</strong></TableCell>
                                 <TableCell><strong>Alunos</strong></TableCell>
+                                <TableCell><strong>Status</strong></TableCell>
                                 <TableCell><strong>Ações</strong></TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {turmas.map((turma, index) => (
-                                <TableRow key={index}>
-                                    <TableCell>{turma.nomeTurma}</TableCell>
-                                    <TableCell>{turma.nomeProfessor}</TableCell>
-                                    <TableCell>{turma.nomeDisciplina}</TableCell>
-                                    <TableCell>{turma.nomeSala}</TableCell>
-                                    <TableCell>
-                                        {turma.alunos && turma.alunos.split(',').map((aluno, idx) => {
-                                            // Remover o ID do aluno e exibir apenas o nome
-                                            const nomeAluno = aluno.split(':')[1] ? aluno.split(':')[1].trim() : aluno.trim();
-                                            return (
-                                                <React.Fragment key={idx}>
-                                                    {nomeAluno}
-                                                    {idx < turma.alunos.split(',').length - 1 && <br />}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </TableCell>
-                                    <TableCell>
-                                        <IconButton onClick={() => handleEdit(turma)}>
-                                            <EditIcon />
-                                        </IconButton>
-                                        <IconButton onClick={() => handleOpenConfirmDialog(turma)}>
-                                            <DeleteIcon />
-                                        </IconButton>
+                            {turmasFiltradas.length > 0 ? (
+                                turmasFiltradas.map((turma, index) => (
+                                    <TableRow 
+                                        key={index}
+                                        sx={{
+                                            backgroundColor: turma.emailProfessor === professorEmail 
+                                                ? 'rgba(144, 238, 144, 0.1)' // Verde claro para turmas do professor logado
+                                                : !turma.ativo 
+                                                    ? 'rgba(0, 0, 0, 0.1)' 
+                                                    : 'inherit',
+                                            opacity: !turma.ativo ? 0.7 : 1
+                                        }}
+                                    >
+                                        <TableCell>{turma.nomeTurma}</TableCell>
+                                        <TableCell>
+                                            {turma.nomeProfessor}
+                                            {turma.emailProfessor === professorEmail && (
+                                                <span style={{ 
+                                                    marginLeft: '5px', 
+                                                    fontSize: '12px', 
+                                                    color: 'green' 
+                                                }}>
+                                                    (Você)
+                                                </span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>{turma.nomeDisciplina}</TableCell>
+                                        <TableCell>{turma.nomeSala}</TableCell>
+                                        <TableCell>
+                                            {turma.alunos && turma.alunos.split(',').map((aluno, idx) => {
+                                                const nomeAluno = aluno.split(':')[1] ? aluno.split(':')[1].trim() : aluno.trim();
+                                                return (
+                                                    <React.Fragment key={idx}>
+                                                        {nomeAluno}
+                                                        {idx < turma.alunos.split(',').length - 1 && <br />}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </TableCell>
+                                        <TableCell>
+                                            <FormControlLabel
+                                                control={
+                                                    <Switch
+                                                        checked={turma.ativo}
+                                                        onChange={() => handleToggleAtivo(turma)}
+                                                        color="primary"
+                                                    />
+                                                }
+                                                label={turma.ativo ? "Ativa" : "Inativa"}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton onClick={() => handleEdit(turma)}>
+                                                <EditIcon />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={7} align="center">
+                                        <Typography variant="subtitle1" style={{ padding: '20px' }}>
+                                            Nenhuma turma encontrada com os filtros aplicados.
+                                        </Typography>
                                     </TableCell>
                                 </TableRow>
-                            ))}
+                            )}
                         </TableBody>
                     </Table>
                 </TableContainer>
 
-                {/* Seção 2: Cadastrar Nova Turma */}
                 <div>
                     <h2>Cadastrar Nova Turma</h2>
                     <form onSubmit={handleSubmit}>
@@ -467,18 +647,42 @@ const CadastrarTurma = () => {
                         </FormControl>
                         <div>
                             <Typography variant="subtitle1">Alunos:</Typography>
-                            {alunos.map((aluno) => (
-                                <FormControlLabel
-                                    key={aluno.idAluno}
-                                    control={
-                                        <Checkbox
-                                            checked={alunosAtivos[aluno.idAluno] || false}
-                                            onChange={() => handleSelectAluno(aluno.idAluno)}
-                                        />
-                                    }
-                                    label={aluno.Nome}
-                                />
-                            ))}
+                            <TextField
+                                fullWidth
+                                size="small"
+                                placeholder="Buscar alunos..."
+                                value={buscarAluno}
+                                onChange={(e) => setBuscarAluno(e.target.value)}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon />
+                                        </InputAdornment>
+                                    ),
+                                }}
+                                style={{ marginBottom: '16px' }}
+                            />
+                            <div style={{ 
+                                maxHeight: '200px', 
+                                overflowY: 'auto',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                padding: '8px'
+                            }}>
+                                {alunosFiltrados.map((aluno) => (
+                                    <FormControlLabel
+                                        key={aluno.idAluno}
+                                        control={
+                                            <Checkbox
+                                                checked={alunosAtivos[aluno.idAluno] || false}
+                                                onChange={() => handleSelectAluno(aluno.idAluno)}
+                                            />
+                                        }
+                                        label={aluno.Nome}
+                                        style={{ display: 'block', marginBottom: '8px' }}
+                                    />
+                                ))}
+                            </div>
                         </div>
                         <Button type="submit" variant="contained" color="primary">
                             Cadastrar Turma
@@ -486,7 +690,6 @@ const CadastrarTurma = () => {
                     </form>
                 </div>
 
-                {/* Diálogo de edição */}
                 <Dialog open={editDialogOpen} onClose={handleCloseEditDialog}>
                     <DialogTitle>{editingTurma ? 'Editar Turma' : 'Cadastrar Nova Turma'}</DialogTitle>
                     <DialogContent>
@@ -549,34 +752,49 @@ const CadastrarTurma = () => {
                                     ))}
                                 </Select>
                             </FormControl>
-                            <FormControl fullWidth margin="normal">
-                                <InputLabel>Professor</InputLabel>
-                                <Select
-                                    name="Professor_idProfessor"
-                                    value={formData.Professor_idProfessor}
-                                    onChange={handleInputChange}
-                                    required
-                                >
-                                    {professores.map(professor => (
-                                        <MenuItem key={professor.idProfessor} value={professor.idProfessor}>
-                                            {professor.Nome}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
                             <div>
-                                <Typography variant="subtitle1" style={{ marginTop: '16px', marginBottom: '8px' }}>Alunos:</Typography>
-                                {alunos.map((aluno) => (
-                                    <div key={aluno.idAluno} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                        <span>{aluno.Nome}</span>
-                                        <Switch
-                                            checked={alunosAtivos[aluno.idAluno] || false}
-                                            onChange={() => handleAlunoToggle(aluno.idAluno)}
-                                            color="primary"
-                                            size="small"
-                                        />
-                                    </div>
-                                ))}
+                                <Typography variant="subtitle1" style={{ marginTop: '16px', marginBottom: '8px' }}>
+                                    Alunos:
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    placeholder="Buscar alunos..."
+                                    value={buscarAluno}
+                                    onChange={(e) => setBuscarAluno(e.target.value)}
+                                    InputProps={{
+                                        startAdornment: (
+                                            <InputAdornment position="start">
+                                                <SearchIcon />
+                                            </InputAdornment>
+                                        ),
+                                    }}
+                                    style={{ marginBottom: '16px' }}
+                                />
+                                <div style={{ 
+                                    maxHeight: '200px', 
+                                    overflowY: 'auto',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    padding: '8px'
+                                }}>
+                                    {alunosFiltrados.map((aluno) => (
+                                        <div key={aluno.idAluno} style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center', 
+                                            marginBottom: '8px' 
+                                        }}>
+                                            <span>{aluno.Nome}</span>
+                                            <Switch
+                                                checked={alunosAtivos[aluno.idAluno] || false}
+                                                onChange={() => handleAlunoToggle(aluno.idAluno)}
+                                                color="primary"
+                                                size="small"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </form>
                     </DialogContent>
@@ -588,7 +806,6 @@ const CadastrarTurma = () => {
                     </DialogActions>
                 </Dialog>
 
-                {/* Diálogo de confirmação de exclusão */}
                 <Dialog
                     open={openConfirmDialog}
                     onClose={handleCloseConfirmDialog}

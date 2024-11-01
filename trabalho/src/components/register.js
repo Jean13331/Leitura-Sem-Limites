@@ -14,7 +14,7 @@ import {
   Snackbar,
   IconButton
 } from '@mui/material';
-import { Close as CloseIcon } from '@mui/icons-material';
+import { Close as CloseIcon, Visibility, VisibilityOff } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -36,6 +36,8 @@ const Register = () => {
   });
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -55,6 +57,13 @@ const Register = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     
+    // Formatar a data antes de enviar
+    const formDataToSend = {
+      ...formData,
+      dataNascimento: formData.dataNascimento ? 
+        formData.dataNascimento.toISOString().split('T')[0] : null
+    };
+
     // Validação básica
     if (formData.senha !== formData.confirmarSenha) {
       setErrorMessage('As senhas não coincidem.');
@@ -68,7 +77,7 @@ const Register = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(formDataToSend),
       });
 
       const data = await response.json();
@@ -94,6 +103,9 @@ const Register = () => {
     }
     setOpenSnackbar(false);
   };
+
+  const handleClickShowPassword = () => setShowPassword((show) => !show);
+  const handleClickShowConfirmPassword = () => setShowConfirmPassword((show) => !show);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ptBR}>
@@ -175,9 +187,20 @@ const Register = () => {
                   fullWidth
                   name="senha"
                   label="Senha"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={formData.senha}
                   onChange={handleChange}
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleClickShowPassword}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    ),
+                  }}
                 />
               </Grid>
               <Grid item xs={12}>
@@ -186,9 +209,20 @@ const Register = () => {
                   fullWidth
                   name="confirmarSenha"
                   label="Confirmar Senha"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   value={formData.confirmarSenha}
                   onChange={handleChange}
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleClickShowConfirmPassword}
+                        edge="end"
+                      >
+                        {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    ),
+                  }}
                 />
               </Grid>
               {formData.role === 'professor' && (

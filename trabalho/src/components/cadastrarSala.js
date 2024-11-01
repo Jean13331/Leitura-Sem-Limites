@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { TextField, Button, Snackbar, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, AppBar, Toolbar, Typography, IconButton, Drawer, List, ListItem, ListItemText, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import { TextField, Button, Snackbar, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, AppBar, Toolbar, Typography, IconButton, Drawer, List, ListItem, ListItemText, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControl, Select, MenuItem } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SearchIcon from '@mui/icons-material/Search';
+import InputAdornment from '@mui/material/InputAdornment';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
 const CadastrarSala = () => {
   const [capacidade, setCapacidade] = useState('');
@@ -21,6 +25,13 @@ const CadastrarSala = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const navigate = useNavigate();
   const professorEmail = localStorage.getItem('professorEmail');
+  const [filtros, setFiltros] = useState({
+    nome: '',
+    localizacao: '',
+    capacidade: '',
+    status: 'todos'
+  });
+  const [novoNome, setNovoNome] = useState('');
 
   useEffect(() => {
     fetchSalas();
@@ -28,7 +39,7 @@ const CadastrarSala = () => {
 
   const fetchSalas = async () => {
     try {
-      const response = await fetch('http://localhost:3001/salas');
+      const response = await fetch('http://localhost:3001/salas-gerenciamento');
       if (response.ok) {
         const data = await response.json();
         setSalas(data);
@@ -73,6 +84,7 @@ const CadastrarSala = () => {
 
   const handleEditClick = (sala) => {
     setSalaParaEditar(sala.Nome);
+    setNovoNome(sala.Nome);
     setNovaCapacidade(sala.Capacidade.toString());
     setNovaLocalizacao(sala.Localizacao);
     setEditDialogOpen(true);
@@ -94,6 +106,7 @@ const CadastrarSala = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
+          nome: novoNome,
           capacidade: parseInt(novaCapacidade), 
           localizacao: novaLocalizacao 
         }),
@@ -176,6 +189,54 @@ const CadastrarSala = () => {
     { text: 'Professor', path: '/editar-professor' }
   ];
 
+  // Função para filtrar as salas
+  const salasFiltradas = salas.filter(sala => {
+    const matchNome = sala.Nome?.toLowerCase().includes(filtros.nome.toLowerCase());
+    const matchLocalizacao = sala.Localizacao?.toLowerCase().includes(filtros.localizacao.toLowerCase());
+    const matchCapacidade = filtros.capacidade === '' || 
+      sala.Capacidade?.toString().includes(filtros.capacidade);
+    const matchStatus = filtros.status === 'todos' ? true :
+      (filtros.status === 'ativos' ? sala.ativo : !sala.ativo);
+    
+    return matchNome && matchLocalizacao && matchCapacidade && matchStatus;
+  });
+
+  // Função para atualizar os filtros
+  const handleFiltroChange = (e) => {
+    const { name, value } = e.target;
+    setFiltros(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleToggleAtivo = async (sala) => {
+    try {
+      const response = await fetch(`http://localhost:3001/inativar-sala/${sala.idSala}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          ativo: !sala.ativo 
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMessage(data.message);
+        setOpenSnackbar(true);
+        fetchSalas();
+      } else {
+        throw new Error('Erro ao alterar status da sala');
+      }
+    } catch (error) {
+      console.error('Erro:', error);
+      setMessage('Erro ao alterar status da sala');
+      setOpenSnackbar(true);
+    }
+  };
+
   return (
     <div>
       <AppBar position="static">
@@ -217,6 +278,73 @@ const CadastrarSala = () => {
       <div style={{ padding: '20px' }}>
         <h1>Gerenciamento de Salas</h1>
         
+        {/* Adicionar seção de filtros */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '16px', 
+          marginBottom: '20px',
+          backgroundColor: '#f5f5f5',
+          padding: '16px',
+          borderRadius: '8px'
+        }}>
+          <TextField
+            name="nome"
+            value={filtros.nome}
+            onChange={handleFiltroChange}
+            placeholder="Filtrar por nome"
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <TextField
+            name="localizacao"
+            value={filtros.localizacao}
+            onChange={handleFiltroChange}
+            placeholder="Filtrar por localização"
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <TextField
+            name="capacidade"
+            value={filtros.capacidade}
+            onChange={handleFiltroChange}
+            placeholder="Filtrar por capacidade"
+            size="small"
+            type="number"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <FormControl size="small" style={{ minWidth: 120 }}>
+            <Select
+              name="status"
+              value={filtros.status}
+              onChange={handleFiltroChange}
+              displayEmpty
+              inputProps={{ 'aria-label': 'Status' }}
+            >
+              <MenuItem value="todos">Todos</MenuItem>
+              <MenuItem value="ativos">Ativos</MenuItem>
+              <MenuItem value="inativos">Inativos</MenuItem>
+            </Select>
+          </FormControl>
+        </div>
+
         <h2>Salas Cadastradas</h2>
         <TableContainer component={Paper}>
           <Table>
@@ -225,25 +353,51 @@ const CadastrarSala = () => {
                 <TableCell>Nome</TableCell>
                 <TableCell>Capacidade</TableCell>
                 <TableCell>Localização</TableCell>
+                <TableCell>Status</TableCell>
                 <TableCell>Ações</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {salas.map((sala, index) => (
-                <TableRow key={index}>
-                  <TableCell>{sala.Nome}</TableCell>
-                  <TableCell>{sala.Capacidade}</TableCell>
-                  <TableCell>{sala.Localizacao}</TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleEditClick(sala)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleOpenConfirmDialog(sala.Nome)}>
-                      <DeleteIcon />
-                    </IconButton>
+              {salasFiltradas.length > 0 ? (
+                salasFiltradas.map((sala, index) => (
+                  <TableRow 
+                    key={index}
+                    sx={{
+                      backgroundColor: !sala.ativo ? 'rgba(0, 0, 0, 0.1)' : 'inherit',
+                      opacity: !sala.ativo ? 0.7 : 1
+                    }}
+                  >
+                    <TableCell>{sala.Nome}</TableCell>
+                    <TableCell>{sala.Capacidade}</TableCell>
+                    <TableCell>{sala.Localizacao}</TableCell>
+                    <TableCell>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={sala.ativo}
+                            onChange={() => handleToggleAtivo(sala)}
+                            color="primary"
+                          />
+                        }
+                        label={sala.ativo ? "Ativa" : "Inativa"}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <IconButton onClick={() => handleEditClick(sala)}>
+                        <EditIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} align="center">
+                    <Typography variant="subtitle1" style={{ padding: '20px' }}>
+                      Nenhuma sala encontrada com os filtros aplicados.
+                    </Typography>
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -290,8 +444,9 @@ const CadastrarSala = () => {
             <TextField
               label="Nome da Sala"
               fullWidth
-              value={salaParaEditar}
-              disabled
+              value={novoNome}
+              onChange={(e) => setNovoNome(e.target.value)}
+              required
               margin="normal"
             />
             <TextField
