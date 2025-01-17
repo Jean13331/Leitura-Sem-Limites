@@ -32,12 +32,14 @@ const Register = () => {
     telefone: '',
     senha: '',
     confirmarSenha: '',
-    disciplina: ''
+    cpf: '',
+    titulacao: ''
   });
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [cpfError, setCpfError] = useState('');
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -45,6 +47,19 @@ const Register = () => {
       ...prevState,
       [name]: value
     }));
+
+    if (name === 'cpf') {
+      const cleanCPF = value.replace(/[^\d]/g, '');
+      if (cleanCPF.length === 11) {
+        if (!validateCPF(value)) {
+          setCpfError('CPF inválido');
+        } else {
+          setCpfError('');
+        }
+      } else {
+        setCpfError('');
+      }
+    }
   };
 
   const handleDateChange = (date) => {
@@ -57,6 +72,14 @@ const Register = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     
+    if (formData.role === 'professor') {
+      if (!validateCPF(formData.cpf)) {
+        setErrorMessage('CPF inválido');
+        setOpenSnackbar(true);
+        return;
+      }
+    }
+
     // Formatar a data antes de enviar
     const formDataToSend = {
       ...formData,
@@ -106,6 +129,34 @@ const Register = () => {
 
   const handleClickShowPassword = () => setShowPassword((show) => !show);
   const handleClickShowConfirmPassword = () => setShowConfirmPassword((show) => !show);
+
+  const validateCPF = (cpf) => {
+    cpf = cpf.replace(/[^\d]/g, '');
+
+    if (cpf.length !== 11) return false;
+
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    let sum = 0;
+    let remainder;
+
+    for (let i = 1; i <= 9; i++) {
+      sum += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+    }
+    remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== parseInt(cpf.substring(9, 10))) return false;
+
+    sum = 0;
+    for (let i = 1; i <= 10; i++) {
+      sum += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+    }
+    remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== parseInt(cpf.substring(10, 11))) return false;
+
+    return true;
+  };
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ptBR}>
@@ -163,23 +214,62 @@ const Register = () => {
                 />
               </Grid>
               {formData.role === 'professor' && (
-                <Grid item xs={12}>
-                  <InputMask
-                    mask="(99) 99999-9999"
-                    value={formData.telefone}
-                    onChange={handleChange}
-                  >
-                    {(inputProps) => (
-                      <TextField
-                        {...inputProps}
-                        required
-                        fullWidth
-                        name="telefone"
-                        label="Telefone"
-                      />
-                    )}
-                  </InputMask>
-                </Grid>
+                <>
+                  <Grid item xs={12}>
+                    <InputMask
+                      mask="(99) 99999-9999"
+                      value={formData.telefone}
+                      onChange={handleChange}
+                    >
+                      {(inputProps) => (
+                        <TextField
+                          {...inputProps}
+                          required
+                          fullWidth
+                          name="telefone"
+                          label="Telefone"
+                        />
+                      )}
+                    </InputMask>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <InputMask
+                      mask="999.999.999-99"
+                      value={formData.cpf}
+                      onChange={handleChange}
+                    >
+                      {(inputProps) => (
+                        <TextField
+                          {...inputProps}
+                          required
+                          fullWidth
+                          name="cpf"
+                          label="CPF"
+                          error={!!cpfError}
+                          helperText={cpfError}
+                        />
+                      )}
+                    </InputMask>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth required>
+                      <InputLabel id="titulacao-label">Titulação</InputLabel>
+                      <Select
+                        labelId="titulacao-label"
+                        name="titulacao"
+                        value={formData.titulacao}
+                        onChange={handleChange}
+                        label="Titulação"
+                      >
+                        <MenuItem value="graduacao">Graduação</MenuItem>
+                        <MenuItem value="especializacao">Especialização</MenuItem>
+                        <MenuItem value="mestrado">Mestrado</MenuItem>
+                        <MenuItem value="doutorado">Doutorado</MenuItem>
+                        <MenuItem value="posdoutorado">Pós-Doutorado</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </>
               )}
               <Grid item xs={12}>
                 <TextField
@@ -225,18 +315,6 @@ const Register = () => {
                   }}
                 />
               </Grid>
-              {formData.role === 'professor' && (
-                <Grid item xs={12}>
-                  <TextField
-                    required
-                    fullWidth
-                    name="disciplina"
-                    label="Disciplina"
-                    value={formData.disciplina}
-                    onChange={handleChange}
-                  />
-                </Grid>
-              )}
             </Grid>
             <Button
               type="submit"

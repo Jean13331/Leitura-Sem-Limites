@@ -31,26 +31,36 @@ import {
     Select,
     MenuItem,
     FormControlLabel,
-    Switch
+    Switch,
+    InputLabel,
+    Chip,
+    Box
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
 
 const CadastrarDisciplina = () => {
     const [openDrawer, setOpenDrawer] = useState(false);
     const [disciplinas, setDisciplinas] = useState([]);
-    const [formData, setFormData] = useState({ Nome: '' });
+    const [formData, setFormData] = useState({ 
+        Nome: '',
+        codigo: '',
+        Periodo: ''
+    });
     const [editingDisciplina, setEditingDisciplina] = useState(null);
     const [openDialog, setOpenDialog] = useState(false);
     const [openSnackbar, setOpenSnackbar] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
     const [snackbarSeverity, setSnackbarSeverity] = useState('success');
     const [filtros, setFiltros] = useState({
-        nome: '',
-        status: 'todos' // 'todos', 'ativos', 'inativos'
+        busca: '',
+        status: 'todos'
     });
+    const [orderBy, setOrderBy] = useState('nome');
+    const [orderDirection, setOrderDirection] = useState('asc');
     const navigate = useNavigate();
     const professorEmail = localStorage.getItem('professorEmail');
 
@@ -64,7 +74,9 @@ const CadastrarDisciplina = () => {
         { text: 'Cadastrar Turma', path: '/cadastrar-turma' },
         { text: 'Cadastrar Sala', path: '/cadastrar-sala' },
         { text: 'Cadastrar Disciplina', path: '/cadastrar-disciplina' },
+        { text: 'Reativar Itens', path: '/reativar' },
         { text: 'Professor', path: '/editar-professor' },
+        { text: 'Cadastrar Aluno', path: '/cadastrar-aluno' },
     ];
 
     useEffect(() => {
@@ -73,14 +85,24 @@ const CadastrarDisciplina = () => {
 
     const fetchDisciplinas = async () => {
         try {
-            const response = await axios.get(`http://localhost:3001/disciplinas-professor?email=${professorEmail}`);
-            console.log('Resposta do servidor:', response.data); // Log para depuração
-            setDisciplinas(response.data);
+            console.log('Iniciando busca de disciplinas...');
+            const response = await axios.get('http://localhost:3001/disciplinas');
+            console.log('Resposta completa:', response);
+            console.log('Dados recebidos:', response.data);
+            
+            if (Array.isArray(response.data)) {
+                setDisciplinas(response.data);
+                console.log('Disciplinas atualizadas no estado:', response.data);
+            } else {
+                console.error('Resposta não é um array:', response.data);
+                setDisciplinas([]);
+            }
         } catch (error) {
             console.error('Erro ao buscar disciplinas:', error);
-            setSnackbarMessage('Erro ao carregar disciplinas. Por favor, tente novamente.');
+            setSnackbarMessage('Erro ao carregar disciplinas');
             setSnackbarSeverity('error');
             setOpenSnackbar(true);
+            setDisciplinas([]);
         }
     };
 
@@ -94,28 +116,50 @@ const CadastrarDisciplina = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        if (!formData.Nome || !formData.codigo || !formData.Periodo) {
+            setSnackbarMessage('Todos os campos são obrigatórios');
+            setSnackbarSeverity('error');
+            setOpenSnackbar(true);
+            return;
+        }
+
         try {
+            const data = {
+                Nome: formData.Nome.trim(),
+                codigo: formData.codigo.trim(),
+                Periodo: formData.Periodo.trim()
+            };
+
             let response;
             if (editingDisciplina) {
-                response = await axios.put(`http://localhost:3001/disciplinas/${editingDisciplina.idDisciplina}`, formData);
+                response = await axios.put(
+                    `http://localhost:3001/disciplinas/${editingDisciplina.idDisciplina}`, 
+                    data
+                );
             } else {
-                response = await axios.post('http://localhost:3001/disciplinas', { ...formData, professorEmail });
+                response = await axios.post('http://localhost:3001/disciplinas', data);
             }
-            
+
             if (response.data.success) {
-                setSnackbarMessage(editingDisciplina ? 'Disciplina atualizada com sucesso!' : 'Disciplina cadastrada com sucesso!');
+                setSnackbarMessage(
+                    editingDisciplina 
+                        ? 'Disciplina atualizada com sucesso!' 
+                        : 'Disciplina cadastrada com sucesso!'
+                );
                 setSnackbarSeverity('success');
                 setOpenSnackbar(true);
                 setOpenDialog(false);
+                setFormData({ Nome: '', codigo: '', Periodo: '' });
                 setEditingDisciplina(null);
-                setFormData({ Nome: '' });
                 fetchDisciplinas();
-            } else {
-                throw new Error(response.data.message);
             }
         } catch (error) {
-            console.error('Erro ao salvar disciplina:', error);
-            setSnackbarMessage(error.response?.data?.message || 'Erro ao salvar disciplina. Por favor, tente novamente.');
+            console.error('Erro:', error);
+            setSnackbarMessage(
+                error.response?.data?.message || 
+                'Erro ao processar a solicitação'
+            );
             setSnackbarSeverity('error');
             setOpenSnackbar(true);
         }
@@ -124,7 +168,11 @@ const CadastrarDisciplina = () => {
     const handleEdit = (disciplina) => {
         console.log('Editando disciplina:', disciplina);
         setEditingDisciplina(disciplina);
-        setFormData({ Nome: disciplina.Nome });
+        setFormData({ 
+            Nome: disciplina.Nome || '', 
+            codigo: disciplina.codigo || '', 
+            Periodo: disciplina.Periodo || ''
+        });
         setOpenDialog(true);
     };
 
@@ -155,11 +203,16 @@ const CadastrarDisciplina = () => {
 
     // Função para filtrar disciplinas
     const disciplinasFiltradas = disciplinas.filter(disciplina => {
-        const matchNome = disciplina.Nome?.toLowerCase().includes(filtros.nome.toLowerCase());
-        const matchStatus = filtros.status === 'todos' ? true :
-            (filtros.status === 'ativos' ? disciplina.ativo : !disciplina.ativo);
+        const termoBusca = filtros.busca.toLowerCase();
+        const matchBusca = 
+            disciplina.Nome?.toLowerCase().includes(termoBusca) ||
+            disciplina.codigo?.toLowerCase().includes(termoBusca) ||
+            disciplina.Periodo?.toLowerCase().includes(termoBusca);
         
-        return matchNome && matchStatus;
+        const matchStatus = filtros.status === 'todos' ? true :
+            (filtros.status === 'ativos' ? disciplina.Status === 1 : disciplina.Status === 0);
+        
+        return matchBusca && matchStatus;
     });
 
     // Função para atualizar os filtros
@@ -171,25 +224,63 @@ const CadastrarDisciplina = () => {
         }));
     };
 
-    // Função para alternar status ativo/inativo
+    // Função para inativar disciplina
     const handleToggleAtivo = async (disciplina) => {
         try {
-            const response = await axios.put(
-                `http://localhost:3001/inativar-disciplina/${disciplina.idDisciplina}`,
-                { ativo: !disciplina.ativo }
-            );
+            if (window.confirm('Tem certeza que deseja inativar esta disciplina?')) {
+                const response = await axios.put(
+                    `http://localhost:3001/inativar-disciplina/${disciplina.idDisciplina}`,
+                    { ativo: false }  // Sempre inativa
+                );
 
-            if (response.data.success) {
-                setSnackbarMessage(response.data.message);
-                setSnackbarSeverity('success');
-                setOpenSnackbar(true);
-                fetchDisciplinas();
+                if (response.data.success) {
+                    setSnackbarMessage('Disciplina inativada com sucesso!');
+                    setSnackbarSeverity('success');
+                    setOpenSnackbar(true);
+                    fetchDisciplinas();
+                }
             }
         } catch (error) {
-            console.error('Erro ao alterar status da disciplina:', error);
-            setSnackbarMessage('Erro ao alterar status da disciplina');
+            console.error('Erro ao inativar disciplina:', error);
+            setSnackbarMessage('Erro ao inativar disciplina');
             setSnackbarSeverity('error');
             setOpenSnackbar(true);
+        }
+    };
+
+    // Adicione esta função para ordenar as disciplinas
+    const ordenarDisciplinas = (disciplinas) => {
+        return [...disciplinas].sort((a, b) => {
+            let compareValue;
+            
+            switch (orderBy) {
+                case 'nome':
+                    compareValue = a.Nome.localeCompare(b.Nome);
+                    break;
+                case 'codigo':
+                    compareValue = a.codigo.localeCompare(b.codigo);
+                    break;
+                case 'periodo':
+                    compareValue = a.Periodo.localeCompare(b.Periodo);
+                    break;
+                case 'turmas':
+                    compareValue = (a.numTurmas || 0) - (b.numTurmas || 0);
+                    break;
+                default:
+                    compareValue = 0;
+            }
+            
+            return orderDirection === 'asc' ? compareValue : -compareValue;
+        });
+    };
+
+    // Adicione esta função para alternar a ordenação
+    const handleSort = (campo) => {
+        if (orderBy === campo) {
+            setOrderDirection(orderDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setOrderBy(campo);
+            setOrderDirection('asc');
         }
     };
 
@@ -233,20 +324,40 @@ const CadastrarDisciplina = () => {
 
             <Container>
                 <Paper style={{ padding: '20px', marginTop: '20px' }}>
-                    {/* Adicionar seção de filtros */}
-                    <div style={{ 
-                        display: 'flex', 
-                        gap: '16px', 
-                        marginBottom: '20px',
-                        backgroundColor: '#f5f5f5',
-                        padding: '16px',
-                        borderRadius: '8px'
-                    }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Typography variant="h5">
+                            Gerenciamento de Disciplinas
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<AddIcon />}
+                            onClick={() => {
+                                setFormData({ Nome: '', codigo: '', Periodo: '' });
+                                setEditingDisciplina(null);
+                                setOpenDialog(true);
+                            }}
+                        >
+                            Nova Disciplina
+                        </Button>
+                    </Box>
+
+                    <Paper 
+                        elevation={0} 
+                        sx={{ 
+                            p: 2, 
+                            mb: 3, 
+                            backgroundColor: '#f5f5f5',
+                            display: 'flex',
+                            gap: 2,
+                            flexWrap: 'wrap'
+                        }}
+                    >
                         <TextField
-                            name="nome"
-                            value={filtros.nome}
+                            name="busca"
+                            value={filtros.busca}
                             onChange={handleFiltroChange}
-                            placeholder="Filtrar por nome"
+                            placeholder="Filtrar por nome, código ou período"
                             size="small"
                             InputProps={{
                                 startAdornment: (
@@ -256,67 +367,82 @@ const CadastrarDisciplina = () => {
                                 ),
                             }}
                         />
-                        <FormControl size="small" style={{ minWidth: 120 }}>
+
+                        <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <InputLabel>Status</InputLabel>
                             <Select
                                 name="status"
                                 value={filtros.status}
                                 onChange={handleFiltroChange}
+                                label="Status"
                             >
                                 <MenuItem value="todos">Todos</MenuItem>
                                 <MenuItem value="ativos">Ativos</MenuItem>
                                 <MenuItem value="inativos">Inativos</MenuItem>
                             </Select>
                         </FormControl>
-                    </div>
+                    </Paper>
 
-                    <Button variant="contained" color="primary" onClick={() => setOpenDialog(true)}>
-                        Adicionar Nova Disciplina
-                    </Button>
-
-                    <TableContainer component={Paper} style={{ marginTop: '20px' }}>
+                    <TableContainer>
                         <Table>
                             <TableHead>
                                 <TableRow>
-                                    <TableCell>Nome</TableCell>
-                                    <TableCell>Turmas</TableCell>
+                                    <TableCell onClick={() => handleSort('nome')}>
+                                        Nome {orderBy === 'nome' && (orderDirection === 'asc' ? '↑' : '↓')}
+                                    </TableCell>
+                                    <TableCell onClick={() => handleSort('codigo')}>
+                                        Código {orderBy === 'codigo' && (orderDirection === 'asc' ? '↑' : '↓')}
+                                    </TableCell>
+                                    <TableCell onClick={() => handleSort('periodo')}>
+                                        Período {orderBy === 'periodo' && (orderDirection === 'asc' ? '↑' : '↓')}
+                                    </TableCell>
+                                    <TableCell onClick={() => handleSort('turmas')}>
+                                        Turmas {orderBy === 'turmas' && (orderDirection === 'asc' ? '↑' : '↓')}
+                                    </TableCell>
                                     <TableCell>Status</TableCell>
                                     <TableCell>Ações</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
                                 {disciplinasFiltradas.length > 0 ? (
-                                    disciplinasFiltradas.map((disciplina) => (
+                                    ordenarDisciplinas(disciplinasFiltradas).map((disciplina) => (
                                         <TableRow 
                                             key={disciplina.idDisciplina}
                                             sx={{
-                                                backgroundColor: !disciplina.ativo ? 'rgba(0, 0, 0, 0.1)' : 'inherit',
-                                                opacity: !disciplina.ativo ? 0.7 : 1
+                                                backgroundColor: disciplina.Status === 0 ? 'rgba(0, 0, 0, 0.1)' : 'inherit',
+                                                opacity: disciplina.Status === 0 ? 0.7 : 1
                                             }}
                                         >
                                             <TableCell>{disciplina.Nome}</TableCell>
+                                            <TableCell>{disciplina.codigo}</TableCell>
+                                            <TableCell>{disciplina.Periodo}</TableCell>
                                             <TableCell>{disciplina.numTurmas || 0} turma(s)</TableCell>
                                             <TableCell>
-                                                <FormControlLabel
-                                                    control={
-                                                        <Switch
-                                                            checked={disciplina.ativo}
-                                                            onChange={() => handleToggleAtivo(disciplina)}
-                                                            color="primary"
-                                                        />
-                                                    }
-                                                    label={disciplina.ativo ? "Ativa" : "Inativa"}
+                                                <Chip 
+                                                    label={disciplina.Status === 1 ? "Ativa" : "Inativa"}
+                                                    color={disciplina.Status === 1 ? "success" : "default"}
+                                                    sx={{ cursor: 'default' }}
                                                 />
                                             </TableCell>
                                             <TableCell>
                                                 <IconButton onClick={() => handleEdit(disciplina)}>
                                                     <EditIcon />
                                                 </IconButton>
+                                                {disciplina.Status === 1 && (
+                                                    <IconButton 
+                                                        onClick={() => handleToggleAtivo(disciplina)}
+                                                        color="error"
+                                                        title="Inativar disciplina"
+                                                    >
+                                                        <DeleteIcon />
+                                                    </IconButton>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={4} align="center">
+                                        <TableCell colSpan={6} align="center">
                                             <Typography variant="subtitle1" style={{ padding: '20px' }}>
                                                 Nenhuma disciplina encontrada com os filtros aplicados.
                                             </Typography>
@@ -341,6 +467,32 @@ const CadastrarDisciplina = () => {
                         fullWidth
                         value={formData.Nome}
                         onChange={handleInputChange}
+                        required
+                    />
+                    <TextField
+                        margin="dense"
+                        name="codigo"
+                        label="Código da Disciplina"
+                        type="text"
+                        fullWidth
+                        value={formData.codigo}
+                        onChange={handleInputChange}
+                        required
+                        helperText="Ex: MAT001, FIS002, etc. (máx. 12 caracteres)"
+                        inputProps={{
+                            maxLength: 12
+                        }}
+                    />
+                    <TextField
+                        margin="dense"
+                        name="Periodo"
+                        label="Período"
+                        type="text"
+                        fullWidth
+                        value={formData.Periodo}
+                        onChange={handleInputChange}
+                        required
+                        helperText="Ex: 1º, 2º, etc."
                     />
                 </DialogContent>
                 <DialogActions>

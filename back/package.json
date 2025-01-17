@@ -10,10 +10,18 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@emotion/react": "^11.13.5",
+    "@emotion/styled": "^11.13.5",
+    "@mui/x-date-pickers": "^7.22.3",
     "backend": "file:",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.4.7",
     "express": "^4.21.1",
-    "mysql2": "^3.11.3"
+    "firebase-admin": "^13.0.1",
+    "mongodb": "^6.11.0",
+    "mysql2": "^3.11.3",
+    "react-input-mask": "^2.0.4"
   },
   "description": "",
   "devDependencies": {

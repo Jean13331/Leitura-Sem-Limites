@@ -4,1003 +4,2218 @@ const app = express();
 const port = 3001;
 
 // Importar a conexão do db.js
-const db = require('./db');
+const pool = require('./db');
 
 // Habilitar CORS e JSON
 app.use(cors());
 app.use(express.json());
 
 // Endpoint para obter todas as turmas
-app.get('/turmas', (req, res) => {
-  const query = `
-      SELECT 
-          t.idTurma, 
-          t.Nome AS nomeTurma, 
-          t.Ano,
-          t.Semestre,
-          t.ativo,
-          t.Professor_idProfessor,
-          t.Disciplina_idDisciplina,
-          t.Sala_idSala,
-          p.Nome AS nomeProfessor, 
-          p.Email AS emailProfessor,
-          p.Telefone AS telefoneProfessor,
-          d.Nome AS nomeDisciplina, 
-          s.Nome AS nomeSala,
-          s.Capacidade AS capacidadeSala,
-          s.Localizacao AS localizacaoSala,
-          GROUP_CONCAT(DISTINCT CONCAT(a.idAluno, ':', a.Nome, ' (', a.Email, ')') SEPARATOR ', ') AS alunos,
-          COUNT(DISTINCT a.idAluno) AS totalAlunos
-      FROM turma t
-      INNER JOIN professor p ON t.Professor_idProfessor = p.idProfessor
-      LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
-      LEFT JOIN sala s ON t.Sala_idSala = s.idSala
-      LEFT JOIN turma_aluno ta ON t.idTurma = ta.turma_id
-      LEFT JOIN aluno a ON ta.aluno_id = a.idAluno
-      GROUP BY t.idTurma, t.Nome, t.Professor_idProfessor, p.Nome, d.Nome, s.Nome
-      ORDER BY t.idTurma DESC
-  `;
-  
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar turmas:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao buscar turmas.' 
-      });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint de login
-app.post('/login', (req, res) => {
-  const { email, password } = req.body;
-
-  let query = 'SELECT * FROM aluno WHERE Email = ? AND Senha = ?';
-  db.query(query, [email, password], (error, results) => {
-    if (error) {
-      console.error('Erro no servidor:', error);
-      return res.status(500).json({ success: false, message: 'Erro no servidor' });
-    }
-
-    if (results.length > 0) {
-      return res.status(200).json({ success: true, role: 'aluno' });
-    } else {
-      query = 'SELECT * FROM professor WHERE Email = ? AND Senha = ?';
-      db.query(query, [email, password], (error, results) => {
-        if (error) {
-          console.error('Erro no servidor:', error);
-          return res.status(500).json({ success: false, message: 'Erro no servidor' });
+app.get('/turmas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const status = req.query.status;
+        const orderBy = req.query.orderBy || 'nome';
+        const order = req.query.order || 'asc';
+        
+        let query = `
+            SELECT 
+                t.idTurma, 
+                t.Nome,
+                t.Ano,
+                t.Semestre,
+                t.Status,
+                t.Professor_idProfessor,
+                t.Disciplina_idDisciplina,
+                t.Sala_idSala,
+                t.Dia_semana,
+                t.Horario_inicio,
+                t.Horario_termino,
+                p.Nome AS nomeProfessor,
+                p.Email AS emailProfessor,
+                p.Titulacao AS titulacaoProfessor,
+                d.Nome AS nomeDisciplina,
+                d.Codigo AS codigoDisciplina, 
+                s.Nome AS nomeSala,
+                (SELECT COUNT(*) FROM turma_aluno ta 
+                 INNER JOIN aluno a ON a.idAluno = ta.aluno_id 
+                 WHERE ta.turma_id = t.idTurma AND a.Status = 1) as qtdAlunos
+            FROM turma t
+            LEFT JOIN professor p ON t.Professor_idProfessor = p.idProfessor
+            LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
+            LEFT JOIN sala s ON t.Sala_idSala = s.idSala
+        `;
+        
+        const params = [];
+        if (status === '1' || status === '0') {
+            query += ` WHERE t.Status = ?`;
+            params.push(parseInt(status));
         }
 
-        if (results.length > 0) {
-          return res.status(200).json({
-            success: true,
-            role: 'professor',
-            idProfessor: results[0].idProfessor
-          });
-        } else {
-          return res.status(401).json({ success: false, message: 'Credenciais inválidas' });
-        }
-      });
-    }
-  });
-});
+        // Ordenação
+        const orderByMap = {
+            'disciplina': 'd.Nome',
+            'ano': 't.Ano',
+            'nome': 't.Nome',
+            'qtdAlunos': 'qtdAlunos'
+        };
 
-// Conectar ao banco de dados e verificar erros
-db.connect((err) => {
-  if (err) {
-    console.error('Erro ao conectar ao banco de dados:', err);
-    return;
-  }
-  console.log('Conectado ao banco de dados!');
+        const orderByField = orderByMap[orderBy] || 't.Nome';
+        query += ` ORDER BY ${orderByField} ${order.toUpperCase()}`;
 
-  // Iniciar o servidor após a conexão bem-sucedida
-  app.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
-  });
-});
-
-// Endpoint para obter todos os professores
-app.get('/professores', (req, res) => {
-  const query = 'SELECT * FROM professor';
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar professores:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar professores.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para obter todas as disciplinas
-app.get('/disciplinas', (req, res) => {
-  const query = 'SELECT * FROM disciplina';
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar disciplinas:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar disciplinas.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para obter todas as salas
-app.get('/salas', (req, res) => {
-  const query = 'SELECT * FROM sala WHERE ativo = true OR ativo IS NULL';
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar salas:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar salas.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para obter todas as salas (incluindo inativas) para a tela de gerenciamento
-app.get('/salas-gerenciamento', (req, res) => {
-  const query = 'SELECT * FROM sala';
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar salas:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar salas.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para obter todos os alunos
-app.get('/alunos', (req, res) => {
-  const query = 'SELECT * FROM aluno';
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar alunos:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar alunos.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para registrar usuários
-app.post('/register', (req, res) => {
-  const { nome, dataNascimento, email, telefone, senha, disciplina } = req.body;
-  const role = req.query.role;
-
-  console.log('Dados recebidos:', { nome, dataNascimento, email, telefone, senha, disciplina, role });
-
-  // Verificar se o e-mail já está cadastrado
-  const checkEmailQuery = 'SELECT Email FROM aluno WHERE Email = ? UNION SELECT Email FROM professor WHERE Email = ?';
-  db.query(checkEmailQuery, [email, email], (error, results) => {
-    if (error) {
-      console.error('Erro ao verificar e-mail:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao verificar e-mail.' });
-    }
-
-    if (results.length > 0) {
-      return res.status(400).json({ success: false, message: 'E-mail já cadastrado.' });
-    }
-
-    let query;
-    let values;
-
-    if (role === 'aluno') {
-      query = 'INSERT INTO aluno (Nome, Data_Nascimento, Email, Senha, Telefone) VALUES (?, ?, ?, ?, ?)';
-      values = [nome, dataNascimento, email, senha, telefone || '']; // Use uma string vazia se telefone for null ou undefined
-    } 
-    else if (role === 'professor') {
-      if (!telefone) {
-        return res.status(400).json({ success: false, message: 'Telefone é obrigatório para professores.' });
-      }
-      query = 'INSERT INTO professor (Nome, Email, Telefone, Senha) VALUES (?, ?, ?, ?)';
-      values = [nome, email, telefone, senha];
-    } 
-    else {
-      return res.status(400).json({ success: false, message: 'Função não reconhecida.' });
-    }
-
-    console.log('Query de inserção:', query, 'Valores:', values);
-
-    db.query(query, values, (error, results) => {
-      if (error) {
-        console.error(`Erro ao registrar ${role}:`, error);
-        return res.status(500).json({ success: false, message: `Erro ao registrar ${role}.` });
-      }
-
-      if (role === 'professor') {
-        const professorId = results.insertId;
-
-        if (!disciplina) {
-          return res.status(400).json({ success: false, message: 'Disciplina é obrigatória para o professor.' });
-        }
-
-        const disciplinaQuery = 'INSERT INTO disciplina (Nome, Professor_id) VALUES (?, ?)';
-        db.query(disciplinaQuery, [disciplina, professorId], (error) => {
-          if (error) {
-            console.error('Erro ao registrar disciplina:', error);
-            return res.status(500).json({ success: false, message: 'Erro ao registrar disciplina.' });
-          }
-
-          return res.status(201).json({ success: true, message: 'Professor registrado com sucesso.' });
+        const [results] = await connection.query(query, params);
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar turmas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar turmas',
+            error: error.message 
         });
-      } else {
-        return res.status(201).json({ success: true, message: 'Aluno registrado com sucesso' });
-      }
-    });
-  });
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
-// Endpoint para verificar se o e-mail já está cadastrado
-app.post('/check-email', (req, res) => {
-  const { email } = req.body;
-
-  const checkEmailQuery = 'SELECT * FROM aluno WHERE Email = ? UNION SELECT * FROM professor WHERE Email = ?';
-  db.query(checkEmailQuery, [email, email], (error, results) => {
-    if (error) {
-      console.error('Erro ao verificar e-mail:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao verificar e-mail.' });
-    }
-
-    return res.json({ exists: results.length > 0 });
-  });
+// Remova o db.connect e inicie o servidor diretamente
+app.listen(port, () => {
+  console.log(`Servidor rodando em http://localhost:${port}`);
 });
 
-// Endpoint para cadastrar turma
-app.post('/cadastrar-turma', (req, res) => {
-  const { Nome, Ano, Semestre, Professor_idProfessor, Disciplina_idDisciplina, Sala_idSala, turma_aluno_id } = req.body;
-
-  // Primeiro, buscar os dados do professor
-  const getProfessorQuery = 'SELECT idProfessor, Nome, Email FROM professor WHERE idProfessor = ?';
-  
-  db.query(getProfessorQuery, [Professor_idProfessor], (error, professorResults) => {
-    if (error) {
-      console.error('Erro ao buscar professor:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao buscar dados do professor'
-      });
-    }
-
-    if (professorResults.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Professor não encontrado'
-      });
-    }
-
-    const professor = professorResults[0];
-
-    const insertTurmaQuery = `
-      INSERT INTO turma 
-      (Nome, Ano, Semestre, Professor_idProfessor, Disciplina_idDisciplina, Sala_idSala, ativo) 
-      VALUES (?, ?, ?, ?, ?, ?, true)
-    `;
-
-    db.query(insertTurmaQuery, [
-      Nome,
-      Ano,
-      Semestre,
-      professor.idProfessor,
-      Disciplina_idDisciplina,
-      Sala_idSala
-    ], (error, result) => {
-      if (error) {
-        console.error('Erro ao cadastrar turma:', error);
-        return res.status(500).json({
-          success: false,
-          message: 'Erro ao cadastrar turma'
+//endpoint professor disciplina
+app.get('/professores/ativos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const [results] = await connection.query(`
+            SELECT 
+                idProfessor,
+                Nome,
+                Email,
+                Telefone,
+                Titulacao,
+                Status
+            FROM professor
+            WHERE Status = 1
+            ORDER BY Nome ASC
+        `);
+        
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar professores ativos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar professores ativos',
+            error: error.message 
         });
-      }
-
-      const turmaId = result.insertId;
-
-      // Se houver alunos, inserir na tabela turma_aluno
-      if (turma_aluno_id && turma_aluno_id.length > 0) {
-        const insertTurmaAlunoQuery = 'INSERT INTO turma_aluno (turma_id, aluno_id) VALUES ?';
-        const values = turma_aluno_id.map(alunoId => [turmaId, alunoId]);
-
-        db.query(insertTurmaAlunoQuery, [values], (error) => {
-          if (error) {
-            console.error('Erro ao inserir alunos na turma:', error);
-            return res.status(500).json({ 
-              success: false, 
-              message: 'Erro ao inserir alunos na turma: ' + error.message 
-            });
-          }
-          return res.status(201).json({ 
-            success: true, 
-            message: 'Turma e alunos cadastrados com sucesso!', 
-            turmaId,
-            professorNome: professor.Nome,
-            professorEmail: professor.Email
-          });
-        });
-      } else {
-        return res.status(201).json({ 
-          success: true, 
-          message: 'Turma cadastrada com sucesso!', 
-          turmaId,
-          professorNome: professor.Nome,
-          professorEmail: professor.Email
-        });
-      }
-    });
-  });
-});
-
-// Rota para buscar disciplinas de um professor específico
-app.get('/disciplinas-professor/:idProfessor', (req, res) => {
-  const { idProfessor } = req.params;
-  const query = `
-    SELECT * 
-    FROM disciplina
-    WHERE professor_id = ?
-  `;
-  
-  db.query(query, [idProfessor], (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar disciplinas do professor:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar disciplinas do professor.' });
+    } finally {
+        if (connection) connection.release();
     }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para editar sala
-app.put('/editar-sala/:nomeSala', (req, res) => {
-  const { nomeSala } = req.params;
-  const { capacidade, localizacao } = req.body;
-
-  const query = 'UPDATE sala SET Capacidade = ?, Localizacao = ? WHERE Nome = ?';
-  db.query(query, [capacidade, localizacao, nomeSala], (error, results) => {
-    if (error) {
-      console.error('Erro ao editar sala:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao editar sala.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Sala não encontrada.' });
-    }
-    return res.status(200).json({ success: true, message: 'Sala editada com sucesso.' });
-  });
-});
-
-// Endpoint para excluir sala
-app.delete('/excluir-sala/:nomeSala', (req, res) => {
-  const { nomeSala } = req.params;
-
-  // Primeiro, verificamos se a sala está sendo usada por alguma turma
-  const checkTurmaQuery = 'SELECT COUNT(*) as count FROM turma WHERE Sala_idSala = (SELECT idSala FROM sala WHERE Nome = ?)';
-  db.query(checkTurmaQuery, [nomeSala], (error, results) => {
-    if (error) {
-      console.error('Erro ao verificar uso da sala:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao verificar uso da sala.' });
-    }
-
-    if (results[0].count > 0) {
-      return res.status(400).json({ success: false, message: 'Não é possível excluir a sala, pois ela está sendo usada por uma ou mais turmas.' });
-    }
-
-    // Se a sala não estiver sendo usada, podemos excluí-la
-    const deleteQuery = 'DELETE FROM sala WHERE Nome = ?';
-    db.query(deleteQuery, [nomeSala], (error, results) => {
-      if (error) {
-        console.error('Erro ao excluir sala:', error);
-        return res.status(500).json({ success: false, message: 'Erro ao excluir sala.' });
-      }
-      if (results.affectedRows === 0) {
-        return res.status(404).json({ success: false, message: 'Sala não encontrada.' });
-      }
-      return res.status(200).json({ success: true, message: 'Sala excluída com sucesso.' });
-    });
-  });
 });
 
 // Endpoint para editar turma
-app.put('/editar-turma/:idTurma', (req, res) => {
-  const { idTurma } = req.params;
-  const { Nome, Ano, Semestre, Professor_idProfessor, Disciplina_idDisciplina, Sala_idSala, turma_aluno_id } = req.body;
+app.put('/turmas/:idTurma', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
 
-  db.beginTransaction((err) => {
-    if (err) {
-      console.error('Erro ao iniciar transação:', err);
-      return res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
-    }
+        const { idTurma } = req.params;
+        const updateData = req.body;
 
-    // Primeiro, buscar os dados atuais da turma
-    const selectTurmaQuery = 'SELECT * FROM turma WHERE idTurma = ?';
-    db.query(selectTurmaQuery, [idTurma], (error, results) => {
-      if (error) {
-        db.rollback(() => {
-          console.error('Erro ao buscar dados da turma:', error);
-          res.status(500).json({ success: false, message: 'Erro ao atualizar turma: ' + error.message });
+        console.log(`Recebendo atualização para turma ID: ${idTurma}`);
+        console.log('Dados recebidos:', updateData);
+
+        // Construir a query dinamicamente apenas com os campos fornecidos
+        const updates = [];
+        const values = [];
+
+        // Mapeia os campos que podem ser atualizados
+        const allowedFields = {
+            'Nome': 'Nome',
+            'professor_id': 'Professor_idProfessor',
+            'disciplina_id': 'Disciplina_idDisciplina',
+            'sala_id': 'Sala_idSala',
+            'Dia_semana': 'Dia_semana',
+            'Horario_inicio': 'Horario_inicio',
+            'Horario_termino': 'Horario_termino',
+            'Ano': 'Ano',
+            'Semestre': 'Semestre',
+            'Status': 'Status'
+        };
+
+        // Adiciona apenas os campos que foram fornecidos na requisição
+        Object.entries(updateData).forEach(([key, value]) => {
+            if (allowedFields[key] && value !== undefined && value !== null) {
+                updates.push(`${allowedFields[key]} = ?`);
+                values.push(value);
+            }
         });
-        return;
-      }
 
-      if (results.length === 0) {
-        db.rollback(() => {
-          res.status(404).json({ success: false, message: 'Turma não encontrada.' });
-        });
-        return;
-      }
-
-      const turmaAtual = results[0];
-
-      // Preparar os dados para atualização, usando os valores existentes se não fornecidos
-      const dadosAtualizados = {
-        Nome: Nome !== undefined ? Nome : turmaAtual.Nome,
-        Ano: Ano !== undefined ? Ano : turmaAtual.Ano,
-        Semestre: Semestre !== undefined ? Semestre : turmaAtual.Semestre,
-        Professor_idProfessor: Professor_idProfessor !== undefined ? Professor_idProfessor : turmaAtual.Professor_idProfessor,
-        Disciplina_idDisciplina: Disciplina_idDisciplina !== undefined ? Disciplina_idDisciplina : turmaAtual.Disciplina_idDisciplina,
-        Sala_idSala: Sala_idSala !== undefined ? Sala_idSala : turmaAtual.Sala_idSala
-      };
-
-      // Atualizar a turma
-      const updateTurmaQuery = `
-          UPDATE turma 
-          SET Nome = ?, 
-              Ano = ?, 
-              Semestre = ?, 
-              Disciplina_idDisciplina = ?, 
-              Sala_idSala = ? 
-          WHERE idTurma = ?`;
-
-      db.query(updateTurmaQuery, [
-          dadosAtualizados.Nome, 
-          dadosAtualizados.Ano, 
-          dadosAtualizados.Semestre, 
-          dadosAtualizados.Disciplina_idDisciplina, 
-          dadosAtualizados.Sala_idSala, 
-          idTurma
-      ], (error) => {
-        if (error) {
-          db.rollback(() => {
-            console.error('Erro ao atualizar turma:', error);
-            res.status(500).json({ success: false, message: 'Erro ao atualizar turma: ' + error.message });
-          });
-          return;
+        // Caso nenhum campo válido seja recebido
+        if (updates.length === 0) {
+            console.warn('Nenhum campo para atualizar');
+            return res.status(400).json({
+                success: false,
+                message: 'Nenhum campo válido fornecido para atualizar'
+            });
         }
 
-        // Atualizar alunos da turma
-        const deleteTurmaAlunoQuery = 'DELETE FROM turma_aluno WHERE turma_id = ?';
-        db.query(deleteTurmaAlunoQuery, [idTurma], (error) => {
-          if (error) {
-            db.rollback(() => {
-              console.error('Erro ao remover alunos antigos da turma:', error);
-              res.status(500).json({ success: false, message: 'Erro ao atualizar alunos da turma: ' + error.message });
+        // Adiciona o ID da turma ao final dos valores
+        values.push(idTurma);
+
+        // Monta a query SQL dinamicamente
+        const query = `
+            UPDATE turma 
+            SET ${updates.join(', ')}
+            WHERE idTurma = ?
+        `;
+
+        console.log('Query de atualização:', query);
+        console.log('Valores:', values);
+
+        // Executa a query
+        const [result] = await connection.query(query, values);
+
+        // Verifica se a turma foi realmente atualizada
+        if (result.affectedRows === 0) {
+            console.warn(`Turma com ID ${idTurma} não encontrada ou nenhum dado alterado.`);
+            return res.status(404).json({
+                success: false,
+                message: 'Turma não encontrada ou nenhum dado foi alterado'
             });
-            return;
-          }
+        }
 
-          // Inserir apenas os alunos ativos
-          if (turma_aluno_id && turma_aluno_id.length > 0) {
-            const insertTurmaAlunoQuery = 'INSERT INTO turma_aluno (turma_id, aluno_id) VALUES ?';
-            const values = turma_aluno_id.map(alunoId => [idTurma, alunoId]);
+        await connection.commit();
+        console.log('Turma atualizada com sucesso!');
+        res.json({
+            success: true,
+            message: 'Turma atualizada com sucesso!'
+        });
 
-            db.query(insertTurmaAlunoQuery, [values], (error) => {
-              if (error) {
-                db.rollback(() => {
-                  console.error('Erro ao inserir novos alunos na turma:', error);
-                  res.status(500).json({ success: false, message: 'Erro ao atualizar alunos da turma: ' + error.message });
+    } catch (error) {
+        console.error('Erro ao atualizar turma:', error);
+        if (connection) await connection.rollback();
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao atualizar turma',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar salas
+app.get('/salas', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const status = req.query.status;
+        const orderBy = req.query.orderBy || 'nome';
+        const order = req.query.order || 'asc';
+        
+        let query = `
+            SELECT 
+                idSala,
+                Nome,
+                Capacidade,
+                Localizacao,
+                Status
+            FROM sala
+        `;
+        
+        const params = [];
+        if (status === '1' || status === '0') {
+            query += ` WHERE Status = ?`;
+            params.push(parseInt(status));
+        }
+        
+        // Mapeamento para ordenação
+        const orderByMap = {
+            'nome': 'Nome',
+            'capacidade': 'Capacidade'
+        };
+        
+        const orderByField = orderByMap[orderBy] || 'Nome';
+        query += ` ORDER BY ${orderByField} ${order.toUpperCase()}`;
+        
+        const [results] = await connection.query(query, params);
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar salas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar salas.',
+            error: error.message 
+        });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para alterar status da sala
+app.put('/sala-status/:idSala', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { idSala } = req.params;
+        const { Status } = req.body;
+
+        // Verifica se a sala está sendo usada por alguma turma ativa
+        if (Status === 0) {
+            const [turmasAtivas] = await connection.query(
+                'SELECT COUNT(*) as count FROM turma WHERE Sala_idSala = ? AND Status = 1',
+                [idSala]
+            );
+
+            if (turmasAtivas[0].count > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Não é possível inativar esta sala pois ela está sendo usada por turmas ativas'
                 });
-                return;
-              }
-              finalizarTransacao();
-            });
-          } else {
-            finalizarTransacao();
-          }
+            }
+        }
+        
+        await connection.query(
+            'UPDATE sala SET Status = ? WHERE idSala = ?',
+            [Status, idSala]
+        );
+        
+        res.json({ 
+            success: true, 
+            message: `Sala ${Status ? 'ativada' : 'inativada'} com sucesso!` 
         });
-      });
-    });
-  });
+    } catch (error) {
+        console.error('Erro ao alterar status da sala:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao alterar status da sala',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
 
-  function finalizarTransacao() {
-    db.commit((err) => {
-      if (err) {
-        db.rollback(() => {
-          console.error('Erro ao finalizar transação:', err);
-          res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
+// Endpoint para buscar alunos
+app.get('/alunos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const status = req.query.status;
+        const orderBy = req.query.orderBy || 'Nome';
+        const order = req.query.order || 'asc';
+        
+        let query = `
+            SELECT 
+                a.*,
+                (SELECT COUNT(*) 
+                 FROM turma_aluno ta 
+                 INNER JOIN turma t ON ta.turma_id = t.idTurma 
+                 WHERE ta.aluno_id = a.idAluno AND t.Status = 1) as qtdTurmas
+            FROM aluno a
+        `;
+        
+        const params = [];
+        if (status === '1' || status === '0') {
+            query += ` WHERE a.Status = ?`;
+            params.push(parseInt(status));
+        }
+
+        // Mapeamento de campos para ordenação
+        const orderByMap = {
+            'Nome': 'a.Nome',
+            'Email': 'a.Email',
+            'Data_Nascimento': 'a.Data_Nascimento',
+            'qtdTurmas': 'qtdTurmas'
+        };
+
+        const orderByField = orderByMap[orderBy] || 'a.Nome';
+        query += ` ORDER BY ${orderByField} ${order.toUpperCase()}`;
+
+        const [results] = await connection.query(query, params);
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar alunos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar alunos',
+            error: error.message 
         });
-        return;
-      }
-      res.status(200).json({ success: true, message: 'Turma atualizada com sucesso!' });
-    });
-  }
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar professor por email
+app.get('/professor', async (req, res) => {
+    const { email } = req.query;
+    try {
+        const [results] = await pool.query('SELECT * FROM professor WHERE Email = ?', [email]);
+        if (results.length > 0) {
+            console.log('Professor encontrado:', results[0]);
+            res.json({ success: true, data: results[0] });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                message: 'Professor não encontrado' 
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao buscar professor:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar professor',
+            error: error.message 
+        });
+    }
+});
+
+// Endpoint para buscar disciplinas do professor
+app.get('/disciplinas-professor', async (req, res) => {
+    const { email } = req.query;
+    try {
+        const query = `
+            SELECT d.* 
+            FROM disciplina d
+            INNER JOIN professor p ON d.professor_id = p.idProfessor
+            WHERE p.Email = ? AND d.Status = 1
+            ORDER BY d.Nome
+        `;
+        
+        const [results] = await pool.query(query, [email]);
+        console.log('Email do professor:', email);
+        console.log('Disciplinas encontradas:', results);
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar disciplinas do professor:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar disciplinas',
+            error: error.message 
+        });
+    }
 });
 
 // Endpoint para excluir turma
-app.delete('/excluir-turma/:idTurma', (req, res) => {
-  const { idTurma } = req.params;
-
-  db.beginTransaction((err) => {
-    if (err) {
-      console.error('Erro ao iniciar transação:', err);
-      return res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
-    }
-
-    // Primeiro, excluir os registros da tabela turma_aluno
-    const deleteTurmaAlunoQuery = 'DELETE FROM turma_aluno WHERE turma_id = ?';
-    db.query(deleteTurmaAlunoQuery, [idTurma], (error) => {
-      if (error) {
-        db.rollback(() => {
-          console.error('Erro ao excluir registros de turma_aluno:', error);
-          res.status(500).json({ success: false, message: 'Erro ao excluir turma: ' + error.message });
-        });
-        return;
-      }
-
-      // Agora, excluir a turma
-      const deleteTurmaQuery = 'DELETE FROM turma WHERE idTurma = ?';
-      db.query(deleteTurmaQuery, [idTurma], (error, results) => {
-        if (error) {
-          db.rollback(() => {
-            console.error('Erro ao excluir turma:', error);
-            res.status(500).json({ success: false, message: 'Erro ao excluir turma: ' + error.message });
-          });
-          return;
-        }
-
-        if (results.affectedRows === 0) {
-          db.rollback(() => {
-            res.status(404).json({ success: false, message: 'Turma não encontrada.' });
-          });
-          return;
-        }
-
-        db.commit((err) => {
-          if (err) {
-            db.rollback(() => {
-              console.error('Erro ao finalizar transação:', err);
-              res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
-            });
-            return;
-          }
-          res.status(200).json({ success: true, message: 'Turma excluída com sucesso.' });
-        });
-      });
-    });
-  });
-});
-
-// Endpoint para buscar disciplinas do professor pelo email
-app.get('/disciplinas-professor', (req, res) => {
-  const professorEmail = req.query.email;
-
-  if (!professorEmail) {
-    return res.status(400).json({ success: false, message: 'Email do professor não fornecido.' });
-  }
-
-  const query = `
-    SELECT d.idDisciplina, d.Nome, d.ativo,
-           COUNT(DISTINCT t.idTurma) as numTurmas
-    FROM disciplina d
-    JOIN professor p ON d.professor_id = p.idProfessor
-    LEFT JOIN turma t ON d.idDisciplina = t.Disciplina_idDisciplina
-    WHERE p.Email = ?
-    GROUP BY d.idDisciplina, d.Nome, d.ativo
-  `;
-  
-  db.query(query, [professorEmail], (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar disciplinas do professor:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar disciplinas do professor.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Endpoint para adicionar uma nova disciplina
-app.post('/disciplinas', (req, res) => {
-  const { Nome, professorEmail } = req.body;
-
-  // Primeiro, obtenha o ID do professor
-  const getProfessorIdQuery = 'SELECT idProfessor FROM professor WHERE Email = ?';
-  db.query(getProfessorIdQuery, [professorEmail], (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar ID do professor:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar ID do professor.' });
-    }
-    if (results.length === 0) {
-      return res.status(404).json({ success: false, message: 'Professor não encontrado.' });
-    }
-
-    const professorId = results[0].idProfessor;
-
-    // Agora, insira a nova disciplina
-    const insertDisciplinaQuery = 'INSERT INTO disciplina (Nome, professor_id) VALUES (?, ?)';
-    db.query(insertDisciplinaQuery, [Nome, professorId], (error, result) => {
-      if (error) {
-        console.error('Erro ao adicionar disciplina:', error);
-        return res.status(500).json({ success: false, message: 'Erro ao adicionar disciplina.' });
-      }
-      return res.status(201).json({ success: true, message: 'Disciplina adicionada com sucesso.', idDisciplina: result.insertId });
-    });
-  });
-});
-
-// Endpoint para excluir uma disciplina
-app.delete('/disciplinas/:idDisciplina', (req, res) => {
-  const { idDisciplina } = req.params;
-
-  // Primeiro, verifique se a disciplina está sendo usada por alguma turma
-  const checkTurmaQuery = 'SELECT COUNT(*) as count FROM turma WHERE Disciplina_idDisciplina = ?';
-  db.query(checkTurmaQuery, [idDisciplina], (error, results) => {
-    if (error) {
-      console.error('Erro ao verificar uso da disciplina:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao verificar uso da disciplina.' });
-    }
-
-    if (results[0].count > 0) {
-      return res.status(400).json({ success: false, message: 'Não é possvel excluir a disciplina, pois ela está sendo usada por uma ou mais turmas.' });
-    }
-
-    // Se a disciplina não estiver sendo usada, podemos excluí-la
-    const deleteQuery = 'DELETE FROM disciplina WHERE idDisciplina = ?';
-    db.query(deleteQuery, [idDisciplina], (error, results) => {
-      if (error) {
-        console.error('Erro ao excluir disciplina:', error);
-        return res.status(500).json({ success: false, message: 'Erro ao excluir disciplina.' });
-      }
-      if (results.affectedRows === 0) {
-        return res.status(404).json({ success: false, message: 'Disciplina não encontrada.' });
-      }
-      return res.status(200).json({ success: true, message: 'Disciplina excluída com sucesso.' });
-    });
-  });
-});
-
-// Endpoint para atualizar uma disciplina
-app.put('/disciplinas/:idDisciplina', (req, res) => {
-  const { idDisciplina } = req.params;
-  const { Nome } = req.body;
-
-  const query = 'UPDATE disciplina SET Nome = ? WHERE idDisciplina = ?';
-  db.query(query, [Nome, idDisciplina], (error, results) => {
-    if (error) {
-      console.error('Erro ao atualizar disciplina:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao atualizar disciplina.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Disciplina não encontrada.' });
-    }
-    return res.status(200).json({ success: true, message: 'Disciplina atualizada com sucesso.' });
-  });
-});
-
-// Endpoint para buscar informações do professor
-app.get('/professor', (req, res) => {
-  const email = req.query.email;
-  
-  if (!email) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Email não fornecido' 
-    });
-  }
-
-  const query = `
-    SELECT 
-      idProfessor, 
-      Nome, 
-      Email, 
-      Telefone, 
-      CASE 
-        WHEN ativo = 1 THEN true 
-        ELSE false 
-      END as ativo
-    FROM professor 
-    WHERE Email = ?
-  `;
-
-  console.log('Buscando professor com email:', email); // Debug
-
-  db.query(query, [email], (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar professor:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao buscar informações do professor' 
-      });
-    }
-
-    if (results.length === 0) {
-      console.log('Nenhum professor encontrado com o email:', email); // Debug
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Professor não encontrado' 
-      });
-    }
-
-    const professor = results[0];
-    console.log('Professor encontrado:', professor); // Debug
+app.delete('/excluir-turma/:idTurma', async (req, res) => {
+    const { idTurma } = req.params;
+    const connection = await pool.getConnection();
     
-    return res.status(200).json({
-      success: true,
-      data: professor
-    });
-  });
-});
+    try {
+        await connection.beginTransaction();
 
-// Endpoint para editar informações do professor
-app.put('/professor', (req, res) => {
-  const { idProfessor, Nome, Email, Telefone } = req.body;
+        // Primeiro remove as relações na tabela turma_aluno
+        await connection.query('DELETE FROM turma_has_aluno WHERE turma_id = ?', [idTurma]);
+        
+        // Depois remove a turma
+        await connection.query('DELETE FROM turma WHERE idTurma = ?', [idTurma]);
 
-  if (!idProfessor) {
-    return res.status(400).json({ success: false, message: 'ID do professor não fornecido.' });
-  }
-
-  const query = 'UPDATE professor SET Nome = ?, Email = ?, Telefone = ? WHERE idProfessor = ?';
-  
-  db.query(query, [Nome, Email, Telefone, idProfessor], (error, result) => {
-    if (error) {
-      console.error('Erro ao atualizar informações do professor:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao atualizar informações do professor.' });
-    }
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Professor não encontrado.' });
-    }
-    return res.status(200).json({ success: true, message: 'Informações do professor atualizadas com sucesso.' });
-  });
-});
-
-// Endpoint para excluir professor
-app.delete('/professor/:idProfessor', (req, res) => {
-  const { idProfessor } = req.params;
-
-  db.beginTransaction((err) => {
-    if (err) {
-      console.error('Erro ao iniciar transação:', err);
-      return res.status(500).json({ success: false, message: 'Erro ao excluir professor.' });
-    }
-
-    // Primeiro, exclua todas as disciplinas associadas ao professor
-    const deleteDisciplinasQuery = 'DELETE FROM disciplina WHERE professor_id = ?';
-    db.query(deleteDisciplinasQuery, [idProfessor], (error) => {
-      if (error) {
-        return db.rollback(() => {
-          console.error('Erro ao excluir disciplinas do professor:', error);
-          res.status(500).json({ success: false, message: 'Erro ao excluir professor.' });
+        await connection.commit();
+        res.json({ success: true, message: 'Turma excluída com sucesso!' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao excluir turma:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao excluir turma',
+            error: error.message 
         });
-      }
+    } finally {
+        connection.release();
+    }
+});
 
-      // Agora, exclua o professor
-      const deleteProfessorQuery = 'DELETE FROM professor WHERE idProfessor = ?';
-      db.query(deleteProfessorQuery, [idProfessor], (error, result) => {
-        if (error) {
-          return db.rollback(() => {
-            console.error('Erro ao excluir professor:', error);
-            res.status(500).json({ success: false, message: 'Erro ao excluir professor.' });
-          });
-        }
+// Endpoint para alterar status da turma
+app.put('/turma-status/:idTurma', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { idTurma } = req.params;
+        const { Status } = req.body;
+        
+        await connection.query(
+            'UPDATE turma SET Status = ? WHERE idTurma = ?',
+            [Status, idTurma]
+        );
+        
+        res.json({ 
+            success: true, 
+            message: `Turma ${Status ? 'ativada' : 'inativada'} com sucesso!` 
+        });
+    } catch (error) {
+        console.error('Erro ao alterar status da turma:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao alterar status da turma',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
 
-        if (result.affectedRows === 0) {
-          return db.rollback(() => {
-            res.status(404).json({ success: false, message: 'Professor não encontrado.' });
-          });
-        }
+// Endpoint para buscar disciplinas
+app.get('/disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        // Query simplificada para teste
+        const query = `
+            SELECT 
+                idDisciplina,
+                Nome,
+                codigo,
+                Periodo,
+                Status
+            FROM disciplina
+            ORDER BY Nome
+        `;
+        
+        const [results] = await connection.query(query);
+        console.log('Disciplinas encontradas:', results); // Debug
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar disciplinas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar disciplinas',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
 
-        db.commit((err) => {
-          if (err) {
-            return db.rollback(() => {
-              console.error('Erro ao commit da transação:', err);
-              res.status(500).json({ success: false, message: 'Erro ao excluir professor.' });
+// Endpoint para criar nova disciplina
+app.post('/disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { Nome, codigo, Periodo } = req.body;
+
+        // Validação dos campos obrigatórios
+        if (!Nome || !codigo || !Periodo) {
+            return res.status(400).json({
+                success: false,
+                message: 'Nome, código e período são campos obrigatórios'
             });
-          }
-          res.status(200).json({ success: true, message: 'Professor excluído com sucesso.' });
+        }
+
+        const query = `
+            INSERT INTO disciplina (Nome, codigo, Periodo, Status) 
+            VALUES (?, ?, ?, 1)
+        `;
+        
+        const [result] = await connection.query(query, [Nome, codigo, Periodo]);
+        
+        res.json({
+            success: true,
+            message: 'Disciplina cadastrada com sucesso',
+            data: { idDisciplina: result.insertId }
         });
-      });
-    });
-  });
+    } catch (error) {
+        console.error('Erro ao cadastrar disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao cadastrar disciplina',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para atualizar status da disciplina
+app.put('/inativar-disciplina/:idDisciplina', async (req, res) => {
+    const { idDisciplina } = req.params;
+    const { ativo } = req.body;
+    
+    try {
+        await pool.query(
+            'UPDATE disciplina SET Status = ? WHERE idDisciplina = ?',
+            [ativo ? 1 : 0, idDisciplina]
+        );
+        
+        res.json({
+            success: true,
+            message: `Disciplina ${ativo ? 'ativada' : 'desativada'} com sucesso!`
+        });
+    } catch (error) {
+        console.error('Erro ao alterar status da disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao alterar status da disciplina',
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para atualizar disciplina
+app.put('/disciplina/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+        const { Nome, codigo, Periodo, Status } = req.body;
+
+        // Validação
+        if (!Nome || !codigo || !Periodo) {
+            return res.status(400).json({
+                success: false,
+                message: 'Todos os campos são obrigatórios'
+            });
+        }
+
+        const query = `
+            UPDATE disciplina 
+            SET Nome = ?, 
+                codigo = ?, 
+                Periodo = ?, 
+                Status = ?
+            WHERE idDisciplina = ?
+        `;
+
+        await connection.query(query, [Nome, codigo, Periodo, Status, id]);
+
+        res.json({
+            success: true,
+            message: 'Disciplina atualizada com sucesso!'
+        });
+
+    } catch (error) {
+        console.error('Erro ao atualizar disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao atualizar disciplina',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Adicionar este endpoint para editar sala
+app.put('/salas/:idSala', async (req, res) => {
+    const { idSala } = req.params;
+    const { Nome, Capacidade, Localizacao } = req.body;
+    
+    try {
+        await pool.query(
+            'UPDATE sala SET Nome = ?, Capacidade = ?, Localizacao = ? WHERE idSala = ?',
+            [Nome, Capacidade, Localizacao, idSala]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Sala atualizada com sucesso!'
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar sala:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao atualizar sala',
+            error: error.message
+        });
+    }
+});
+
+// Função de validação
+const validarProfessorDisciplina = async (connection, professorId, disciplinaId) => {
+    const [disciplinas] = await connection.query(`
+        SELECT 1 FROM professor_disciplina 
+        WHERE Professor_idProfessor = ? AND Disciplina_idDisciplina = ?
+    `, [professorId, disciplinaId]);
+
+    return disciplinas.length > 0;
+};
+
+// Atualizar o endpoint de criar turma
+app.post('/turmas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+
+        const { 
+            Nome, 
+            idProfessor, 
+            idDisciplina, 
+            idSala,
+            Dia_semana,
+            Horario_inicio,
+            Horario_termino,
+            Ano,
+            Semestre,
+            Status,
+            alunos // Array com os IDs dos alunos
+        } = req.body;
+
+        // Insere a turma
+        const [result] = await connection.query(`
+            INSERT INTO turma (
+                Nome,
+                Ano,
+                Semestre,
+                Professor_idProfessor,
+                Disciplina_idDisciplina,
+                Sala_idSala,
+                Dia_semana,
+                Horario_inicio,
+                Horario_termino,
+                Status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            Nome,
+            Ano,
+            Semestre,
+            idProfessor,
+            idDisciplina,
+            idSala,
+            Dia_semana,
+            Horario_inicio,
+            Horario_termino,
+            Status
+        ]);
+
+        const turmaId = result.insertId;
+
+        // Se houver alunos selecionados, insere na tabela turma_aluno
+        if (alunos && alunos.length > 0) {
+            // Remove duplicatas do array de alunos
+            const alunosUnicos = [...new Set(alunos)];
+            
+            // Cria array de valores para inserção em lote
+            const values = alunosUnicos.map(alunoId => [turmaId, alunoId]);
+            
+            // Insere as associações turma-aluno
+            await connection.query(
+                'INSERT INTO turma_aluno (turma_id, aluno_id) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ 
+            success: true, 
+            message: 'Turma criada com sucesso',
+            id: turmaId 
+        });
+    } catch (error) {
+        if (connection) {
+            await connection.rollback();
+        }
+        console.error('Erro ao criar turma:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao criar turma',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 // Endpoint para cadastrar sala
-app.post('/cadastrar-sala', (req, res) => {
-  const { nome, capacidade, localizacao } = req.body;
+app.post('/cadastrar-sala', async (req, res) => {
+    const { nome, capacidade, localizacao } = req.body;
+    
+    try {
+        // Validar dados
+        if (!nome || !capacidade || !localizacao) {
+            return res.status(400).json({
+                success: false,
+                message: 'Todos os campos são obrigatórios'
+            });
+        }
 
-  const query = 'INSERT INTO sala (Nome, Capacidade, Localizacao) VALUES (?, ?, ?)';
-  db.query(query, [nome, capacidade, localizacao], (error, results) => {
-    if (error) {
-      console.error('Erro ao cadastrar sala:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao cadastrar sala.' });
-    }
-    return res.status(201).json({ success: true, message: 'Sala cadastrada com sucesso.' });
-  });
-});
-
-// Adicione este novo endpoint para buscar turmas de um professor especfico
-app.get('/turmas-professor', (req, res) => {
-  const professorEmail = req.query.email;
-
-  if (!professorEmail) {
-    return res.status(400).json({ success: false, message: 'Email do professor não fornecido.' });
-  }
-
-  const query = `
-      SELECT 
-          t.idTurma, 
-          t.Nome AS nomeTurma, 
-          t.Ano,
-          t.Semestre,
-          t.Professor_idProfessor,
-          t.Disciplina_idDisciplina,
-          t.Sala_idSala,
-          p.Nome AS nomeProfessor, 
-          d.Nome AS nomeDisciplina, 
-          s.Nome AS nomeSala,
-          GROUP_CONCAT(DISTINCT CONCAT(a.idAluno, ':', a.Nome) SEPARATOR ', ') AS alunos
-      FROM turma t
-      INNER JOIN professor p ON t.Professor_idProfessor = p.idProfessor
-      LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
-      LEFT JOIN sala s ON t.Sala_idSala = s.idSala
-      LEFT JOIN turma_aluno ta ON t.idTurma = ta.turma_id
-      LEFT JOIN aluno a ON ta.aluno_id = a.idAluno
-      WHERE p.Email = ?
-      GROUP BY t.idTurma, t.Nome, t.Professor_idProfessor, p.Nome, d.Nome, s.Nome
-      ORDER BY t.idTurma DESC
-  `;
-  
-  db.query(query, [professorEmail], (error, results) => {
-    if (error) {
-      console.error('Erro ao buscar turmas:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar turmas.' });
-    }
-    return res.status(200).json(results);
-  });
-});
-
-// Substituir o endpoint de exclusão por um de inativação
-app.put('/inativar-turma/:idTurma', (req, res) => {
-  const { idTurma } = req.params;
-  const { ativo } = req.body;
-
-  const query = 'UPDATE turma SET ativo = ? WHERE idTurma = ?';
-  db.query(query, [ativo, idTurma], (error, results) => {
-    if (error) {
-      console.error('Erro ao atualizar status da turma:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao atualizar status da turma.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Turma não encontrada.' });
-    }
-    return res.status(200).json({ 
-      success: true, 
-      message: ativo ? 'Turma ativada com sucesso.' : 'Turma inativada com sucesso.' 
-    });
-  });
-});
-
-// Endpoint para inativar/ativar sala
-app.put('/inativar-sala/:idSala', (req, res) => {
-  const { idSala } = req.params;
-  const { ativo } = req.body;
-
-  const query = 'UPDATE sala SET ativo = ? WHERE idSala = ?';
-  db.query(query, [ativo, idSala], (error, results) => {
-    if (error) {
-      console.error('Erro ao atualizar status da sala:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao atualizar status da sala.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Sala não encontrada.' });
-    }
-    return res.status(200).json({ 
-      success: true, 
-      message: ativo ? 'Sala ativada com sucesso.' : 'Sala inativada com sucesso.' 
-    });
-  });
-});
-
-// Modificar o endpoint de edição de sala para incluir o nome
-app.put('/editar-sala/:nomeSala', (req, res) => {
-  const { nomeSala } = req.params;
-  const { nome, capacidade, localizacao } = req.body;
-
-  const query = 'UPDATE sala SET Nome = ?, Capacidade = ?, Localizacao = ? WHERE Nome = ?';
-  db.query(query, [nome, capacidade, localizacao, nomeSala], (error, results) => {
-    if (error) {
-      console.error('Erro ao editar sala:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao editar sala.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Sala não encontrada.' });
-    }
-    return res.status(200).json({ success: true, message: 'Sala atualizada com sucesso.' });
-  });
-});
-
-// Endpoint para inativar/ativar disciplina
-app.put('/inativar-disciplina/:idDisciplina', (req, res) => {
-  const { idDisciplina } = req.params;
-  const { ativo } = req.body;
-
-  const query = 'UPDATE disciplina SET ativo = ? WHERE idDisciplina = ?';
-  db.query(query, [ativo, idDisciplina], (error, results) => {
-    if (error) {
-      console.error('Erro ao atualizar status da disciplina:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao atualizar status da disciplina.' });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Disciplina não encontrada.' });
-    }
-    return res.status(200).json({ 
-      success: true, 
-      message: ativo ? 'Disciplina ativada com sucesso.' : 'Disciplina inativada com sucesso.' 
-    });
-  });
-});
-
-// Endpoint para inativar/ativar professor
-app.put('/inativar-professor/:idProfessor', (req, res) => {
-  const { idProfessor } = req.params;
-  const { ativo } = req.body;
-
-  console.log('Tentando atualizar professor:', { idProfessor, ativo }); // Debug
-
-  // Primeiro, verificar se o professor existe
-  const checkQuery = 'SELECT * FROM professor WHERE idProfessor = ?';
-  db.query(checkQuery, [idProfessor], (errorCheck, resultsCheck) => {
-    if (errorCheck) {
-      console.error('Erro ao verificar professor:', errorCheck);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao verificar professor' 
-      });
-    }
-
-    if (resultsCheck.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Professor não encontrado' 
-      });
-    }
-
-    // Professor existe, atualizar status
-    const updateQuery = 'UPDATE professor SET ativo = ? WHERE idProfessor = ?';
-    db.query(updateQuery, [ativo, idProfessor], (errorUpdate, resultsUpdate) => {
-      if (errorUpdate) {
-        console.error('Erro ao atualizar status:', errorUpdate);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Erro ao atualizar status do professor' 
+        const [result] = await pool.query(
+            'INSERT INTO sala (Nome, Capacidade, Localizacao, Status) VALUES (?, ?, ?, 1)',
+            [nome, capacidade, localizacao]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Sala cadastrada com sucesso!',
+            salaId: result.insertId
         });
-      }
-
-      return res.status(200).json({ 
-        success: true, 
-        message: ativo ? 'Professor ativado com sucesso.' : 'Professor inativado com sucesso.',
-        ativo: ativo
-      });
-    });
-  });
+    } catch (error) {
+        console.error('Erro ao cadastrar sala:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao cadastrar sala',
+            error: error.message
+        });
+    }
 });
 
-// Função auxiliar para atualizar o status do professor
-const updateProfessorStatus = (idProfessor, ativo, res) => {
-  const query = 'UPDATE professor SET ativo = ? WHERE idProfessor = ?';
-  
-  db.query(query, [ativo, idProfessor], (error, results) => {
-    if (error) {
-      console.error('Erro ao atualizar status do professor:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao atualizar status do professor.' 
-      });
+// Endpoint para obter professores
+app.get('/professores', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const query = `
+            SELECT 
+                idProfessor,
+                Nome,
+                Email,
+                Telefone,
+                Titulacao,
+                Status
+            FROM professor
+            ORDER BY Nome ASC
+        `;
+        
+        const [results] = await connection.query(query);
+        console.log('Professores encontrados:', results); // Debug
+        res.json(results);
+        
+    } catch (error) {
+        console.error('Erro ao buscar professores:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar professores',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
     }
-    
-    if (results.affectedRows === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Professor não encontrado.' 
-      });
-    }
-    
-    return res.status(200).json({ 
-      success: true, 
-      message: ativo ? 'Professor ativado com sucesso.' : 'Professor inativado com sucesso.',
-      ativo: ativo
-    });
-  });
-};
+});
 
+// Endpoint para alterar status do professor
+app.put('/professor-status/:idProfessor', async (req, res) => {
+    const { idProfessor } = req.params;
+    const { Status } = req.body;
+    
+    try {
+        await pool.query(
+            'UPDATE professor SET Status = ? WHERE idProfessor = ?',
+            [Status ? 1 : 0, idProfessor]
+        );
+        
+        res.json({ 
+            success: true, 
+            message: `Professor ${Status ? 'ativado' : 'desativado'} com sucesso!` 
+        });
+    } catch (error) {
+        console.error('Erro ao alterar status do professor:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao alterar status do professor',
+            error: error.message 
+        });
+    }
+});
+
+// Endpoint para atualizar professor
+app.put('/professores/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+        const updateData = req.body;
+
+        // Primeiro, busca o professor atual
+        const [professor] = await connection.query(
+            'SELECT * FROM professor WHERE idProfessor = ?',
+            [id]
+        );
+
+        if (professor.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Professor não encontrado'
+            });
+        }
+
+        // Monta a query apenas com os campos fornecidos
+        const updates = [];
+        const values = [];
+        
+        if (updateData.Nome !== undefined) {
+            updates.push('Nome = ?');
+            values.push(updateData.Nome);
+        }
+        if (updateData.Email !== undefined) {
+            updates.push('Email = ?');
+            values.push(updateData.Email);
+        }
+        if (updateData.CPF !== undefined) {
+            updates.push('CPF = ?');
+            values.push(updateData.CPF);
+        }
+        if (updateData.Titulacao !== undefined) {
+            updates.push('Titulacao = ?');
+            values.push(updateData.Titulacao);
+        }
+        if (updateData.Telefone !== undefined) {
+            updates.push('Telefone = ?');
+            values.push(updateData.Telefone);
+        }
+        if (updateData.Senha !== undefined) {
+            updates.push('Senha = ?');
+            values.push(updateData.Senha);
+        }
+        if (updateData.Status !== undefined) {
+            updates.push('Status = ?');
+            values.push(updateData.Status);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Nenhum campo para atualizar'
+            });
+        }
+
+        // Adiciona o ID ao final dos valores
+        values.push(id);
+
+        const query = `
+            UPDATE professor 
+            SET ${updates.join(', ')}
+            WHERE idProfessor = ?
+        `;
+
+        await connection.query(query, values);
+
+        res.json({ 
+            success: true, 
+            message: 'Professor atualizado com sucesso!'
+        });
+
+    } catch (error) {
+        console.error('Erro ao atualizar professor:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao atualizar professor',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para login
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        // Primeiro tenta encontrar um professor
+        const [professors] = await pool.query(
+            'SELECT idProfessor, Nome, Email, Status FROM professor WHERE Email = ? AND Senha = ?',
+            [email, password]
+        );
+
+        if (professors.length > 0) {
+            // Verifica se o professor está ativo
+            if (professors[0].Status === 0) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Conta inativa. Entre em contato com o administrador.'
+                });
+            }
+            
+            return res.json({
+                success: true,
+                role: 'professor',
+                user: professors[0]
+            });
+        }
+
+        // Se não encontrou professor, tenta encontrar um aluno
+        const [students] = await pool.query(
+            'SELECT idAluno, Nome, Email, Status FROM aluno WHERE Email = ? AND Senha = ?',
+            [email, password]
+        );
+
+        if (students.length > 0) {
+            // Verifica se o aluno está ativo
+            if (students[0].Status === 0) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Conta inativa. Entre em contato com o administrador.'
+                });
+            }
+            
+            return res.json({
+                success: true,
+                role: 'aluno',
+                user: students[0]
+            });
+        }
+
+        // Se não encontrou nenhum usuário
+        return res.status(401).json({
+            success: false,
+            message: 'Email ou senha incorretos.'
+        });
+
+    } catch (error) {
+        console.error('Erro no login:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao realizar login',
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para criar nova turma
+app.post('/turmas', async (req, res) => {
+    const connection = await pool.getConnection();
+    
+    try {
+        const {
+            Nome,
+            Ano,
+            Semestre,
+            Professor_idProfessor,
+            Disciplina_idDisciplina,
+            Sala_idSala,
+            Dia_semana,
+            Horario_inicio,
+            Horario_termino
+        } = req.body;
+
+        // Validar campos obrigatórios
+        if (!Nome) {
+            throw new Error('Nome da turma é obrigatório');
+        }
+
+        // Converter strings vazias para null
+        const professorId = Professor_idProfessor || null;
+        const disciplinaId = Disciplina_idDisciplina || null;
+        const salaId = Sala_idSala || null;
+        const semestre = Semestre || null;
+        const diaSemana = Dia_semana || null;
+        const horarioInicio = Horario_inicio || null;
+        const horarioTermino = Horario_termino || null;
+
+        const [result] = await connection.query(`
+            INSERT INTO turma (
+                Nome,
+                Ano,
+                Semestre,
+                Professor_idProfessor,
+                Disciplina_idDisciplina,
+                Sala_idSala,
+                Dia_semana,
+                Horario_inicio,
+                Horario_termino,
+                Status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        `, [
+            Nome,
+            Ano,
+            semestre,
+            professorId,
+            disciplinaId,
+            salaId,
+            diaSemana,
+            horarioInicio,
+            horarioTermino
+        ]);
+
+        res.json({
+            success: true,
+            message: 'Turma criada com sucesso!',
+            id: result.insertId
+        });
+    } catch (error) {
+        console.error('Erro ao criar turma:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao criar turma: ' + error.message
+        });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para criar nova sala
+app.post('/salas', async (req, res) => {
+    const { Nome, Capacidade, Localizacao } = req.body;
+    
+    try {
+        const [result] = await pool.query(
+            'INSERT INTO sala (Nome, Capacidade, Localizacao, Status) VALUES (?, ?, ?, 1)',
+            [Nome, Capacidade, Localizacao]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Sala criada com sucesso!',
+            id: result.insertId
+        });
+    } catch (error) {
+        console.error('Erro ao criar sala:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao criar sala',
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para criar nova disciplina
+app.post('/disciplinas', async (req, res) => {
+    const { Nome, codigo, Periodo, Professor_idProfessor } = req.body;
+    
+    console.log('Recebendo requisição para criar disciplina:', {
+        Nome,
+        codigo,
+        Periodo,
+        Professor_idProfessor
+    });
+
+    const connection = await pool.getConnection();
+    
+    try {
+        await connection.beginTransaction();
+
+        // Primeiro, criar a disciplina
+        const [result] = await connection.query(
+            'INSERT INTO disciplina (Nome, codigo, Periodo, Status) VALUES (?, ?, ?, 1)',
+            [Nome, codigo, Periodo]
+        );
+        
+        console.log('Disciplina criada com ID:', result.insertId);
+        
+        // Depois, criar a relação professor_disciplina
+        await connection.query(
+            'INSERT INTO professor_disciplina (Professor_idProfessor, Disciplina_idDisciplina) VALUES (?, ?)',
+            [Professor_idProfessor, result.insertId]
+        );
+        
+        await connection.commit();
+        
+        res.json({
+            success: true,
+            message: 'Disciplina criada com sucesso!',
+            id: result.insertId
+        });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao criar disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao criar disciplina',
+            error: error.message
+        });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para criar professor
+app.post('/professores', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { Nome, Email, Telefone, Senha, CPF, Titulacao, Status = 1 } = req.body;
+
+        // Validação dos campos obrigatórios
+        if (!Nome || !Email || !Senha || !CPF || !Titulacao) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios não preenchidos'
+            });
+        }
+
+        const query = `
+            INSERT INTO professor 
+            (Nome, Email, Telefone, Senha, CPF, Titulacao, Status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const [result] = await connection.query(query, [
+            Nome,
+            Email,
+            Telefone,
+            Senha,
+            CPF.replace(/[^\d]/g, ''), // Remove caracteres não numéricos do CPF
+            Titulacao,
+            Status
+        ]);
+
+        res.status(201).json({
+            success: true,
+            message: 'Professor criado com sucesso',
+            id: result.insertId
+        });
+
+    } catch (error) {
+        console.error('Erro ao criar professor:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao criar professor',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar professor por email
+app.get('/professor-by-email', async (req, res) => {
+    const { email } = req.query;
+    
+    try {
+        const [professors] = await pool.query(
+            'SELECT idProfessor, Nome, Email FROM professor WHERE Email = ?',
+            [email]
+        );
+        
+        if (professors.length > 0) {
+            res.json({
+                success: true,
+                professor: professors[0]
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                message: 'Professor não encontrado'
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao buscar professor:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao buscar professor',
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para editar disciplina
+app.put('/editar-disciplina/:idDisciplina', async (req, res) => {
+    const { idDisciplina } = req.params;
+    const { Nome, codigo, Periodo, Status } = req.body;
+    
+    const connection = await pool.getConnection();
+    
+    try {
+        await connection.beginTransaction();
+
+        await connection.query(`
+            UPDATE disciplina 
+            SET Nome = ?,
+                codigo = ?,
+                Periodo = ?,
+                Status = ?
+            WHERE idDisciplina = ?
+        `, [Nome, codigo, Periodo, Status, idDisciplina]);
+        
+        await connection.commit();
+        
+        res.json({
+            success: true,
+            message: 'Disciplina atualizada com sucesso!'
+        });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao atualizar disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao atualizar disciplina',
+            error: error.message
+        });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para inativar disciplina
+app.put('/inativar-disciplina/:idDisciplina', async (req, res) => {
+    const { idDisciplina } = req.params;
+    const { ativo } = req.body;
+    
+    try {
+        await pool.query(
+            'UPDATE disciplina SET Status = ? WHERE idDisciplina = ?',
+            [ativo ? 1 : 0, idDisciplina]
+        );
+        
+        res.json({
+            success: true,
+            message: `Disciplina ${ativo ? 'ativada' : 'desativada'} com sucesso!`
+        });
+    } catch (error) {
+        console.error('Erro ao alterar status da disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao alterar status da disciplina',
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para inativar turma
+app.put('/inativar-turma/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { Status } = req.body; // Recebendo o status do corpo da requisição
+
+        await pool.query(
+            "UPDATE turma SET Status = ? WHERE idTurma = ?",
+            [Status, id]
+        );
+
+        res.json({ message: 'Turma inativada com sucesso' });
+    } catch (error) {
+        console.error('Erro ao inativar turma:', error);
+        res.status(500).json({ error: 'Erro ao inativar turma' });
+    }
+});
+
+// Endpoint para inativar sala
+app.put('/inativar-sala/:idSala', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(`
+            UPDATE sala 
+            SET Status = 0
+            WHERE idSala = ?
+        `, [req.params.idSala]);
+        
+        res.json({ success: true, message: 'Sala inativada com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao inativar sala:', error);
+        res.status(500).json({ success: false, message: 'Erro ao inativar sala' });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para inativar professor
+app.put('/inativar-professor/:idProfessor', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(`
+            UPDATE professor 
+            SET Status = 0
+            WHERE idProfessor = ?
+        `, [req.params.idProfessor]);
+        
+        res.json({ success: true, message: 'Professor inativado com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao inativar professor:', error);
+        res.status(500).json({ success: false, message: 'Erro ao inativar professor' });
+    } finally {
+        connection.release();
+    }
+});
+
+// Primeiro, vamos ajustar o endpoint para buscar uma turma específica
+app.get('/turma/:idTurma', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const [turma] = await connection.query(`
+            SELECT 
+                t.idTurma, 
+                t.Nome AS nomeTurma, 
+                t.Ano,
+                t.Semestre,
+                t.Status,
+                t.Professor_idProfessor,
+                t.Disciplina_idDisciplina,
+                t.Sala_idSala,
+                t.Dia_semana,
+                t.Horario_inicio,
+                t.Horario_termino,
+                p.Nome AS nomeProfessor,
+                d.Nome AS nomeDisciplina, 
+                s.Nome AS nomeSala
+            FROM turma t
+            LEFT JOIN professor p ON t.Professor_idProfessor = p.idProfessor
+            LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
+            LEFT JOIN sala s ON t.Sala_idSala = s.idSala
+            WHERE t.idTurma = ?
+        `, [req.params.idTurma]);
+
+        if (turma.length > 0) {
+            res.json(turma[0]);
+        } else {
+            res.status(404).json({ message: 'Turma não encontrada' });
+        }
+    } catch (error) {
+        console.error('Erro ao buscar turma:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar turma',
+            error: error.message 
+        });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para reativar turma
+app.put('/turmas/:idTurma/reactivate', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(`
+            UPDATE turma 
+            SET Status = 1
+            WHERE idTurma = ?
+        `, [req.params.idTurma]);
+        
+        res.json({ success: true, message: 'Turma reativada com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao reativar turma:', error);
+        res.status(500).json({ success: false, message: 'Erro ao reativar turma' });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para reativar sala
+app.put('/salas/:idSala/reactivate', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(`
+            UPDATE sala 
+            SET Status = 1
+            WHERE idSala = ?
+        `, [req.params.idSala]);
+        
+        res.json({ success: true, message: 'Sala reativada com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao reativar sala:', error);
+        res.status(500).json({ success: false, message: 'Erro ao reativar sala' });
+    } finally {
+        connection.release();
+    }
+});
+
+app.put('/disciplinas/:idDisciplina', async (req, res) => {
+    const { idDisciplina } = req.params; // Pega o ID da disciplina da URL
+    const { Nome, codigo, Periodo, Status } = req.body; // Dados enviados pelo front-end
+    
+    console.log('Recebendo atualização para disciplina ID:', idDisciplina);
+    console.log('Dados recebidos:', { Nome, codigo, Periodo, Status });
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Array para construir a query dinamicamente
+        const updates = [];
+        const values = [];
+
+        // Adiciona os campos que foram enviados
+        if (Nome !== undefined) {
+            updates.push('Nome = ?');
+            values.push(Nome);
+        }
+        if (codigo !== undefined) {
+            updates.push('codigo = ?');
+            values.push(codigo);
+        }
+        if (Periodo !== undefined) {
+            updates.push('Periodo = ?');
+            values.push(Periodo);
+        }
+        if (Status !== undefined) {
+            updates.push('Status = ?');
+            values.push(Status);
+        }
+
+        // Se nenhum campo for enviado, retorna erro
+        if (updates.length === 0) {
+            console.warn('Nenhum campo enviado para atualização');
+            return res.status(400).json({
+                success: false,
+                message: 'Nenhum campo enviado para atualização',
+            });
+        }
+
+        // Adiciona o ID da disciplina no final dos valores
+        values.push(idDisciplina);
+
+        // Monta a query dinamicamente
+        const query = `
+            UPDATE disciplina 
+            SET ${updates.join(', ')} 
+            WHERE idDisciplina = ?
+        `;
+
+        console.log('Query de atualização:', query);
+        console.log('Valores:', values);
+
+        const [result] = await connection.query(query, values);
+
+        if (result.affectedRows === 0) {
+            console.warn(`Disciplina com ID ${idDisciplina} não encontrada`);
+            return res.status(404).json({
+                success: false,
+                message: 'Disciplina não encontrada',
+            });
+        }
+
+        await connection.commit();
+
+        console.log('Disciplina atualizada com sucesso!');
+        res.json({
+            success: true,
+            message: 'Disciplina atualizada com sucesso!',
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar disciplina:', error);
+        if (connection) await connection.rollback();
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao atualizar disciplina',
+            error: error.message,
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para cadastrar disciplina na homeProfessor
+app.post('/disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const { Nome, codigo, Periodo, Status } = req.body;
+        
+        const [result] = await connection.query(
+            'INSERT INTO disciplina (Nome, codigo, Periodo, Status) VALUES (?, ?, ?, ?)', 
+            [Nome, codigo, Periodo, Status]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Disciplina criada com sucesso',
+            idDisciplina: result.insertId,
+            data: { idDisciplina: result.insertId }
+        });
+    } catch (error) {
+        console.error('Erro ao criar disciplina:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao criar disciplina',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// tamo aquiii
+app.post('/disciplinas/:idDisciplina/professores/:idProfessor', async (req, res) => {
+
+    const { idDisciplina, idProfessor } = req.params;
+    // console.log('Dados recebidos no backend:', { Nome, codigo, Periodo, Status });
+
+    try {
+        const query = `
+            INSERT INTO professor_disciplina (Professor_idProfessor, Disciplina_idDisciplina)
+            VALUES (?, ?)
+        `;
+        const [result] = await pool.query(query, [idProfessor, idDisciplina]);
+
+        console.log('Professor-Disciplina criada com sucesso:', result);
+
+        res.status(201).json({
+            success: true,
+            message: 'Professor-Disciplina criada com sucesso',
+        });
+    } catch (error) {
+        console.error('Erro ao criar professor_disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao criar professor_disciplina',
+            error: error.message,
+        });
+    }
+});
+
+// Endpoint para buscar disciplinas com seus professores
+app.get('/disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const status = req.query.status;
+        const orderBy = req.query.orderBy || 'nome';
+        const order = req.query.order || 'asc';
+
+        let query = `
+            SELECT 
+                d.idDisciplina,
+                d.Nome,
+                d.codigo,
+                d.Periodo,
+                d.Status,
+                GROUP_CONCAT(DISTINCT pd.Professor_idProfessor) as professores
+            FROM disciplina d
+            LEFT JOIN professor_disciplina pd ON d.idDisciplina = pd.Disciplina_idDisciplina
+        `;
+
+        const params = [];
+        if (status === '1' || status === '0') {
+            query += ` WHERE d.Status = ?`;
+            params.push(parseInt(status));
+        }
+
+        query += ` GROUP BY d.idDisciplina`;
+
+        const orderByMap = {
+            'nome': 'd.Nome',
+            'codigo': 'd.codigo',
+            'periodo': 'd.Periodo'
+        };
+
+        const orderByField = orderByMap[orderBy] || 'd.Nome';
+        query += ` ORDER BY ${orderByField} ${order.toUpperCase()}`;
+
+        const [results] = await connection.query(query, params);
+
+        // Convert the comma-separated professor IDs to an array
+        results.forEach(disciplina => {
+            disciplina.professores = disciplina.professores 
+                ? disciplina.professores.split(',').map(id => parseInt(id))
+                : [];
+        });
+
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar disciplinas:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao buscar disciplinas',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar professores ativos
+app.get('/professores/ativos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const [results] = await connection.query(`
+            SELECT 
+                idProfessor,
+                Nome,
+                Email,
+                Telefone,
+                Titulacao,
+                Status
+            FROM professor
+            WHERE Status = 1
+            ORDER BY Nome ASC
+        `);
+        
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar professores ativos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar professores ativos',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar detalhes de uma disciplina específica
+app.get('/disciplinas/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+
+        const query = `
+            SELECT 
+                d.idDisciplina,
+                d.Nome,
+                d.codigo,
+                d.Periodo,
+                d.Status,
+                GROUP_CONCAT(DISTINCT pd.Professor_idProfessor) as professores
+            FROM disciplina d
+            LEFT JOIN professor_disciplina pd ON d.idDisciplina = pd.Disciplina_idDisciplina
+            WHERE d.idDisciplina = ?
+            GROUP BY d.idDisciplina
+        `;
+
+        const [results] = await connection.query(query, [id]);
+
+        if (results.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Disciplina não encontrada'
+            });
+        }
+
+        // Convert the comma-separated professor IDs to an array of numbers
+        const disciplina = {
+            ...results[0],
+            professores: results[0].professores 
+                ? results[0].professores.split(',').map(Number) 
+                : []
+        };
+
+        res.json(disciplina);
+
+    } catch (error) {
+        console.error('Erro ao buscar detalhes da disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao buscar detalhes da disciplina',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar detalhes da sala com turmas associadas
+app.get('/salas/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+
+        const query = `
+            SELECT 
+                s.idSala,
+                s.Nome,
+                s.Localizacao,
+                s.Capacidade,
+                s.Status,
+                GROUP_CONCAT(
+                    DISTINCT CONCAT(
+                        t.Nome, '|',
+                        d.Nome, '|',
+                        p.Nome, '|',
+                        t.Dia_semana, '|',
+                        t.Horario_inicio, '|',
+                        t.Horario_termino
+                    )
+                ) as turmas
+            FROM sala s
+            LEFT JOIN turma t ON s.idSala = t.Sala_idSala
+            LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
+            LEFT JOIN professor p ON t.Professor_idProfessor = p.idProfessor
+            WHERE s.idSala = ?
+            GROUP BY s.idSala
+        `;
+
+        const [results] = await connection.query(query, [id]);
+
+        if (results.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Sala não encontrada'
+            });
+        }
+
+        // Processar as turmas
+        const sala = {
+            ...results[0],
+            turmas: results[0].turmas 
+                ? results[0].turmas.split(',').map(turma => {
+                    const [nome, disciplina, professor, dia, inicio, termino] = turma.split('|');
+                    return {
+                        nome,
+                        disciplina,
+                        professor,
+                        dia,
+                        horario: `${inicio} - ${termino}`
+                    };
+                })
+                : []
+        };
+
+        res.json(sala);
+
+    } catch (error) {
+        console.error('Erro ao buscar detalhes da sala:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao buscar detalhes da sala',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Listar todos os alunos
+app.get('/alunos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const [alunos] = await connection.query(`
+            SELECT idAluno, Nome, Email, Telefone, Data_Nascimento, Status
+            FROM aluno
+        `);
+        
+        res.json(alunos);
+    } catch (error) {
+        console.error('Erro ao buscar alunos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar alunos',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Criar novo aluno
+app.post('/alunos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { Nome, Email, Telefone, Data_Nascimento, Senha } = req.body;
+
+        const [result] = await connection.query(
+            'INSERT INTO aluno (Nome, Email, Telefone, Data_Nascimento, Senha, Status) VALUES (?, ?, ?, ?, ?, 1)',
+            [Nome, Email, Telefone, Data_Nascimento, Senha]
+        );
+
+        res.json({ 
+            success: true, 
+            message: 'Aluno criado com sucesso',
+            id: result.insertId 
+        });
+    } catch (error) {
+        console.error('Erro ao criar aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao criar aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Atualizar aluno
+app.put('/alunos/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+        const updateData = req.body;
+
+        // Se for apenas atualização de status
+        if (Object.keys(updateData).length === 1 && updateData.Status !== undefined) {
+            await connection.query(
+                'UPDATE aluno SET Status = ? WHERE idAluno = ?',
+                [updateData.Status, id]
+            );
+        } 
+        // Se for atualização completa do aluno
+        else {
+            const { Nome, Email, Telefone, Data_Nascimento, Status } = updateData;
+            await connection.query(
+                'UPDATE aluno SET Nome = ?, Email = ?, Telefone = ?, Data_Nascimento = ?, Status = ? WHERE idAluno = ?',
+                [Nome, Email, Telefone, Data_Nascimento, Status, id]
+            );
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Aluno atualizado com sucesso' 
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao atualizar aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Excluir aluno
+app.delete('/alunos/:id', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+
+        await connection.query('DELETE FROM aluno WHERE idAluno = ?', [id]);
+
+        res.json({ 
+            success: true, 
+            message: 'Aluno excluído com sucesso' 
+        });
+    } catch (error) {
+        console.error('Erro ao excluir aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao excluir aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Buscar turmas do aluno
+app.get('/alunos/:id/turmas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { id } = req.params;
+
+        const query = `
+            SELECT 
+                t.idTurma,
+                t.Nome,
+                t.Dia_semana,
+                t.Horario_inicio,
+                t.Horario_termino,
+                d.Nome as nomeDisciplina,
+                p.Nome as nomeProfessor
+            FROM turma t
+            INNER JOIN turma_aluno ta ON t.idTurma = ta.turma_id
+            INNER JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
+            INNER JOIN professor p ON t.Professor_idProfessor = p.idProfessor
+            WHERE ta.aluno_id = ? AND t.Status = 1
+            ORDER BY t.Dia_semana, t.Horario_inicio
+        `;
+
+        const [turmas] = await connection.query(query, [id]);
+        res.json(turmas);
+    } catch (error) {
+        console.error('Erro ao buscar turmas do aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar turmas do aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar detalhes de um aluno específico
+app.get('/alunos/:idAluno', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const [results] = await connection.query(`
+            SELECT 
+                idAluno,
+                Nome,
+                Email,
+                Telefone,
+                Data_Nascimento,
+                Status
+            FROM aluno
+            WHERE idAluno = ?
+        `, [req.params.idAluno]);
+
+        if (results.length > 0) {
+            res.json(results[0]);
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                message: 'Aluno não encontrado' 
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao buscar detalhes do aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar detalhes do aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar alunos inativos
+app.get('/alunos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const [alunos] = await connection.query(`
+            SELECT idAluno, Nome, Email, Telefone, Data_Nascimento, Status
+            FROM aluno
+        `);
+        
+        res.json(alunos);
+    } catch (error) {
+        console.error('Erro ao buscar alunos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar alunos',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para reativar aluno
+app.put('/alunos/:idAluno/reactivate', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.query(
+            'UPDATE aluno SET Status = 1 WHERE idAluno = ?',
+            [req.params.idAluno]
+        );
+        res.json({ success: true, message: 'Aluno reativado com sucesso' });
+    } catch (error) {
+        console.error('Erro ao reativar aluno:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao reativar aluno',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar turmas com contagem de alunos
+app.get('/turmas/with-alunos-count', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const query = `
+            SELECT 
+                t.idTurma,
+                t.Nome,
+                t.Ano,
+                t.Semestre,
+                t.Status,
+                t.Dia_semana,
+                t.Horario_inicio,
+                t.Horario_termino,
+                p.Nome as nomeProfessor,
+                d.Nome as nomeDisciplina,
+                s.Nome as nomeSala,
+                COUNT(DISTINCT ta.aluno_id) as totalAlunos
+            FROM turma t
+            LEFT JOIN professor p ON t.Professor_idProfessor = p.idProfessor
+            LEFT JOIN disciplina d ON t.Disciplina_idDisciplina = d.idDisciplina
+            LEFT JOIN sala s ON t.Sala_idSala = s.idSala
+            LEFT JOIN turma_aluno ta ON t.idTurma = ta.turma_id
+            GROUP BY 
+                t.idTurma, 
+                t.Nome, 
+                t.Ano,
+                t.Semestre,
+                t.Status,
+                t.Dia_semana,
+                t.Horario_inicio,
+                t.Horario_termino,
+                p.Nome,
+                d.Nome,
+                s.Nome
+            ORDER BY t.Nome
+        `;
+        
+        const [turmas] = await connection.query(query);
+        res.json(turmas);
+    } catch (error) {
+        console.error('Erro ao buscar turmas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar turmas',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar associações professor-disciplina
+app.get('/professor-disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const [results] = await connection.query(`
+            SELECT 
+                pd.Professor_idProfessor as professor_id,
+                pd.Disciplina_idDisciplina as disciplina_id,
+                p.Nome as professor_nome,
+                d.Nome as disciplina_nome
+            FROM professor_disciplina pd
+            INNER JOIN professor p ON p.idProfessor = pd.Professor_idProfessor
+            INNER JOIN disciplina d ON d.idDisciplina = pd.Disciplina_idDisciplina
+            WHERE p.Status = 1 AND d.Status = 1
+        `);
+        
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar associações professor-disciplina:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar associações professor-disciplina',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para atualizar alunos de uma turma
+app.put('/turmas/:id/alunos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+
+        const { id } = req.params;
+        const { alunosIds } = req.body;
+
+        // Remove todos os alunos atuais da turma
+        await connection.query('DELETE FROM turma_aluno WHERE turma_id = ?', [id]);
+
+        // Adiciona os novos alunos
+        if (alunosIds && alunosIds.length > 0) {
+            const values = alunosIds.map(alunoId => [id, alunoId]);
+            await connection.query(
+                'INSERT INTO turma_aluno (turma_id, aluno_id) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: 'Alunos da turma atualizados com sucesso' });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('Erro ao atualizar alunos da turma:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao atualizar alunos da turma',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar todas as disciplinas
+app.get('/disciplinas', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        // Query simplificada para teste
+        const query = `
+            SELECT 
+                idDisciplina,
+                Nome,
+                codigo,
+                Periodo,
+                Status
+            FROM disciplina
+            ORDER BY Nome
+        `;
+        
+        const [results] = await connection.query(query);
+        console.log('Disciplinas encontradas:', results); // Debug
+        res.json(results);
+    } catch (error) {
+        console.error('Erro ao buscar disciplinas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar disciplinas',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para cadastrar disciplina
+app.post('/cadastrar-disciplina', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { Nome, codigo, Periodo, Status = 1 } = req.body;
+
+        // Validação
+        if (!Nome || !codigo || !Periodo) {
+            return res.status(400).json({
+                success: false,
+                message: 'Todos os campos são obrigatórios'
+            });
+        }
+
+        const query = `
+            INSERT INTO disciplina 
+            (Nome, codigo, Periodo, Status) 
+            VALUES (?, ?, ?, ?)
+        `;
+
+        const [result] = await connection.query(query, [Nome, codigo, Periodo, Status]);
+
+        res.json({
+            success: true,
+            message: 'Disciplina cadastrada com sucesso!',
+            disciplinaId: result.insertId
+        });
+
+    } catch (error) {
+        console.error('Erro ao cadastrar disciplina:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao cadastrar disciplina',
+            error: error.message
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint para buscar professores ativos
+app.get('/professores/ativos', async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        
+        const query = `
+            SELECT 
+                idProfessor,
+                Nome,
+                Email,
+                Telefone,
+                Titulacao,
+                Status
+            FROM professor
+            WHERE Status = 1
+            ORDER BY Nome ASC
+        `;
+        
+        const [results] = await connection.query(query);
+        res.json(results);
+        
+    } catch (error) {
+        console.error('Erro ao buscar professores ativos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao buscar professores ativos',
+            error: error.message 
+        });
+    } finally {
+        if (connection) connection.release();
+    }
+});
